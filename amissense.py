@@ -65,6 +65,7 @@ def fetch_predictions_for_id(uniprot_id: str, missense_tsv: Path) -> pd.DataFram
                         "protein_variant_pos": int(prot_var[1:-1]),
                         "protein_variant_to": prot_var[-1],
                         "pathogenicity": float(parts[2]),
+                        "classification": parts[3],
                     }
                 )
 
@@ -105,7 +106,7 @@ def main(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path
         missense_tsv = download_predictions()
         predictions = fetch_predictions_for_id(uniprot_id, missense_tsv)
         predictions.to_csv(
-            output_dir / f"{uniprot_id}_pathogenicity_predictions.csv",
+            output_dir / f"{uniprot_id}_AM_pathogenicity_predictions.csv",
             index=False,
         )
 
@@ -127,8 +128,11 @@ def main(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path
         )
 
         clinvar_data = helpers.clinvar.fetch_clinvar_data(gene_id)
-        helpers.graphs.plot_clinvar_scatter(gene_id, predictions, clinvar_data, output_dir)
-        helpers.graphs.plot_clinvar_sankey(gene_id, predictions, clinvar_data, output_dir)
+        clinvar_merged_data = helpers.clinvar.merge_missense_data(clinvar_data, predictions)
+        clinvar_merged_data.to_csv(str(output_dir / f"{gene_id}_clinvar_AM.csv"), index=False)
+
+        helpers.graphs.plot_clinvar_scatter(gene_id, predictions, clinvar_merged_data, output_dir)
+        helpers.graphs.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, output_dir)
 
     except requests.HTTPError as http_err:
         print(f"Unexpected error during download: {http_err}")

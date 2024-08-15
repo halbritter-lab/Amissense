@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -123,7 +124,7 @@ def plot_predictions_line_graph(
     print(f"Line graph stored as {line_graph_path}")
 
 
-def _germline_classification_mapping() -> dict:
+def _clinvar_classification_mapping() -> dict:
     return {
         "Pathogenic": "Likely pathogenic",
         "Pathogenic/Likely pathogenic": "Likely pathogenic",
@@ -136,44 +137,26 @@ def _germline_classification_mapping() -> dict:
     }
 
 
-def _pathogenicity_mapping(value) -> str:
-    if 0 <= value <= 0.34:
-        return "Likely benign"
-    elif 0.35 <= value <= 0.564:
-        return "Uncertain significance"
-    elif 0.565 <= value <= 1:
-        return "Likely pathogenic"
-    else:
-        return "Unknown"
-
-
-def plot_clinvar_scatter(gene_id: str, predictions: pd.DataFrame, clinvar_data: pd.DataFrame, out_dir: Path):
-    # Merge AM_pathogenicity scores to clinvar df
-    merged_data = pd.merge(
-        clinvar_data,
-        predictions,
-        left_on=["from", "location", "to"],
-        right_on=["protein_variant_from", "protein_variant_pos", "protein_variant_to"],
-        how="left",
+def plot_clinvar_scatter(
+    gene_id: str, missense_data: pd.DataFrame, clinvar_missense_data: pd.DataFrame, out_dir: Path
+):
+    # Map classification to reduce number of labels
+    clinvar_missense_data["clinvar_classification_mapped"] = clinvar_missense_data["ClinVar classification"].map(
+        _clinvar_classification_mapping()
     )
-
-    # Apply classification mapping
-    merged_data["classification_mapped"] = merged_data["germline_classification"].map(
-        _germline_classification_mapping()
-    )
-
-    # Save the merged data
-    merged_data.to_csv(str(out_dir / f"{gene_id}_AM_clinvar_merged.csv"), index=False)
 
     # Structure average positional pathogenicity
-    predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
+    predictions_grouped_means = missense_data.groupby("protein_variant_pos")["pathogenicity"].mean()
     positional_means = predictions_grouped_means.reindex(
-        range(0, predictions["protein_variant_pos"].max() + 1), fill_value=0
+        range(0, missense_data["protein_variant_pos"].max() + 1), fill_value=0
     ).to_numpy()
 
     plt.figure(figsize=(20, 6))
 
-    # Scatterplot with custom color palette
+    # Line plot of positional pathogenicity means
+    plt.plot(positional_means, label="Mean AlphaMissense Pathogenicity", color="green", alpha=0.5, linewidth=1)
+
+    # Scatterplot
     pathogenicity_palette = {
         "Likely pathogenic": "orangered",
         "Likely benign": "royalblue",
@@ -182,40 +165,45 @@ def plot_clinvar_scatter(gene_id: str, predictions: pd.DataFrame, clinvar_data: 
     }
 
     sns.scatterplot(
-        data=merged_data,
-        x="location",
-        y="pathogenicity",
-        hue="classification_mapped",
+        data=clinvar_missense_data,
+        x="Amino acid change - location",
+        y="AM pathogenicity score",
+        hue="clinvar_classification_mapped",
         palette=pathogenicity_palette,
         hue_order=pathogenicity_palette.keys(),
         s=100,
     )
 
-    # Line plot of positional pathogenicity means
-    plt.plot(positional_means, label="Mean AlphaMissense Pathogenicity", color="green", alpha=0.5, linewidth=1)
-
     # General plot settings
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0.0)
-    plt.title("AlphaMissense Predicted Pathogenicity with Clinvar Pathogenicity Classification")
+    plt.title("AlphaMissense Predicted Pathogenicity with ClinVar Pathogenicity Classification")
     plt.xlabel("Residue Sequence Number")
     plt.ylabel("AlphaMissense Predicted Pathogenicity")
 
     clinvar_scatter_path = out_dir / f"{gene_id}_avgAM_clinvar.png"
     plt.savefig(clinvar_scatter_path, format="png", bbox_inches="tight")
-    print(f"Clinvar graph stored at {clinvar_scatter_path}")
+    print(f"ClinVar graph stored at {clinvar_scatter_path}")
     plt.close()
 
 
-def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_data: pd.DataFrame, out_dir: Path):
-    # Merge AM_pathogenicity scores to clinvar df
-    merged_data = pd.merge(
-        clinvar_data,
-        predictions,
-        left_on=["from", "location", "to"],
-        right_on=["protein_variant_from", "protein_variant_pos", "protein_variant_to"],
-        how="left",
+def _am_mapping() -> dict:
+    return {
+        "benign": "Likely benign",
+        "ambiguous": "Uncertain significance",
+        "pathogenic": "Likely pathogenic",
+    }
+
+
+def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missense_data: pd.DataFrame, out_dir: Path):
+    # Map classification to reduce number of labels
+    clinvar_missense_data["clinvar_classification_mapped"] = clinvar_missense_data["ClinVar classification"].map(
+        _clinvar_classification_mapping()
     )
 
+    # Match AM labels to remapped ClinVar labels
+    clinvar_missense_data["am_classification_mapped"] = clinvar_missense_data["AM classification"].map(_am_mapping())
+
+    """
     # Create the clinvar_amissense DataFrame
     clinvar_amissense = merged_data[["germline_classification", "pathogenicity"]].copy()
 
@@ -224,6 +212,7 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_data: p
         _germline_classification_mapping()
     )
     clinvar_amissense["pathogenicity_mapped"] = clinvar_amissense["pathogenicity"].apply(_pathogenicity_mapping)
+    
 
     # Append new column to check if classification_mapped equals pathogenicity_mapped
     clinvar_amissense["match"] = clinvar_amissense.apply(
@@ -231,22 +220,24 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_data: p
     )
 
     # Save the clinvar_amissense DataFrame as a CSV file
-    clinvar_amissense.to_csv(str(out_dir / f"{gene_id}_AM_clinvar_matched.csv"), index=False)
+    # clinvar_amissense.to_csv(str(out_dir / f"{gene_id}_AM_clinvar_matched.csv"), index=False)
 
     # Calculate and print the percentages of 'yes' and 'no'
     match_counts = clinvar_amissense["match"].value_counts(normalize=True) * 100
-    print("Some info on what's printed below...")  # TODO
-    print(f"Percentage of 'yes': {match_counts.get('yes', 0):.2f}%")
-    print(f"Percentage of 'no': {match_counts.get('no', 0):.2f}%")
+    print(f"Percentage agreement between ClinVar and AlphaMissense: {match_counts.get('yes', 0):.2f}%")
+    print(f"Percentage disagreement between ClinVar and AlphaMissense: {match_counts.get('no', 0):.2f}%")
+    """
 
     unival_df = (
-        clinvar_amissense.groupby(["classification_mapped", "pathogenicity_mapped"]).size().reset_index(name="count")
+        clinvar_missense_data.groupby(["clinvar_classification_mapped", "am_classification_mapped"])
+        .size()
+        .reset_index(name="count")
     )
 
     # Calculate percentages for ClinVar and AlphaMissense classifications
     total_count = unival_df["count"].sum()
-    clinvar_percentages = unival_df.groupby("classification_mapped")["count"].sum() / total_count * 100
-    am_percentages = unival_df.groupby("pathogenicity_mapped")["count"].sum() / total_count * 100
+    clinvar_percentages = unival_df.groupby("clinvar_classification_mapped")["count"].sum() / total_count * 100
+    am_percentages = unival_df.groupby("am_classification_mapped")["count"].sum() / total_count * 100
 
     # Create custom labels with percentages for both sets of nodes
     clinvar_labels = [f"ClinVar: {label} ({clinvar_percentages[label]:.1f}%)" for label in clinvar_percentages.index]
@@ -258,8 +249,8 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_data: p
     output_mapping = {label: idx + len(input_mapping) for idx, label in enumerate(am_percentages.index)}
 
     # Update the DataFrame with new mappings
-    unival_df["source"] = unival_df["classification_mapped"].map(input_mapping)
-    unival_df["target"] = unival_df["pathogenicity_mapped"].map(output_mapping)
+    unival_df["source"] = unival_df["clinvar_classification_mapped"].map(input_mapping)
+    unival_df["target"] = unival_df["am_classification_mapped"].map(output_mapping)
 
     # Create Sankey diagram
     sankey_fig = go.Figure(
