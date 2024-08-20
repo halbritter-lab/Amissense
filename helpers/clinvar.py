@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import re
 from xml.etree import ElementTree
+import time
 
 # Dictionary to translate 3-letter amino acid codes to single-letter symbols
 AA_DICT = {
@@ -30,7 +31,7 @@ AA_DICT = {
 
 def fetch_summary_ids(gene_id):
     url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term={gene_id}[gene]&retmax=500"
-    response = requests.get(url, timeout=3)
+    response = requests.get(url, timeout=5)
     response.raise_for_status()
 
     root = ElementTree.fromstring(response.content)
@@ -41,7 +42,7 @@ def fetch_summary_ids(gene_id):
 def fetch_summaries(id_batch):
     ids = ",".join(id_batch)
     url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=clinvar&id={ids}&retmode=json"
-    response = requests.get(url, timeout=3)
+    response = requests.get(url, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -97,6 +98,7 @@ def fetch_clinvar_data(gene_id: str, batch_size=100) -> pd.DataFrame:
     processed_summaries = []
     for index in range(0, len(ids), batch_size):
         try:
+            time.sleep(1)  # Don't overwhelm ClinVar API
             summaries = fetch_summaries(ids[index : index + batch_size])
             processed_summaries.extend(process_summaries(summaries))
         except requests.HTTPError:
@@ -138,7 +140,7 @@ def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame)
 
 
 if __name__ == "__main__":
-    GENE_ID = "SLC7A9"  # Replace with your desired protein ID
+    GENE_ID = "SLC7A13"  # Replace with your desired protein ID
     df = fetch_clinvar_data(GENE_ID)
     print(df.shape[0])
     print(df)
