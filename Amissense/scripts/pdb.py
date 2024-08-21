@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Tuple
 import argparse
 import logging
+import warnings
+from Bio.PDB.PDBExceptions import PDBConstructionWarning  # Import the specific warning
 import Amissense.scripts.utils as utils
 
 # Load configuration from utils module
@@ -16,6 +18,9 @@ logging.basicConfig(
     level=config["logging"]["default_level"],
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+
+# Suppress specific PDBConstructionWarning
+warnings.simplefilter('ignore', PDBConstructionWarning)
 
 def extract_chain_id(uniprot_id: str, pdb_path: Path) -> str:
     """Fetches the chain ID for a given UniProt ID from the PDB file"""
