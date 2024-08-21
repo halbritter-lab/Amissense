@@ -2,6 +2,11 @@
 .idea/
 .python-version
 __pycache__/
-test/
-out/
-tmp/
+
+# ignore files in the test, out, and tmp directories
+/test/
+/out/
+/tmp/
+
+# ignore any pdb files
+*.pdb
