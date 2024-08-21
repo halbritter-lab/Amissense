@@ -6,6 +6,7 @@ import warnings
 import pandas as pd
 from pathlib import Path
 import logging
+from xml.etree import ElementTree
 
 def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
     """
@@ -23,11 +24,46 @@ def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
 # Load configuration at the module level
 config = load_config()
 
-# Set up logging configuration
-logging.basicConfig(
-    level=config["logging"]["default_level"],
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+def ensure_directory_exists(directory: Path):
+    """
+    Ensure that the given directory exists. If not, create it.
+
+    Parameters:
+    directory (Path): The path to the directory.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+
+def setup_logging(log_level=logging.INFO, log_file=None):
+    """
+    Set up logging configuration.
+
+    Parameters:
+    log_level: Logging level (default: INFO)
+    log_file: Optional file path to log to a file
+    """
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        filename=log_file,
+        filemode='a'
+    )
+    if not log_file:
+        logging.getLogger().addHandler(logging.StreamHandler())
+
+def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
+    """
+    Fetch data from a given URL and return it as a parsed dictionary.
+
+    Parameters:
+    url (str): The URL to fetch data from.
+    timeout (int): Timeout for the request in seconds.
+
+    Returns:
+    dict: Parsed JSON or XML data from the response.
+    """
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+    return response.json() if response.headers['Content-Type'] == 'application/json' else ElementTree.fromstring(response.content)
 
 def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
@@ -69,7 +105,7 @@ def download_pdb_file(pdb_id: str, output_dir: Path) -> Path:
     Returns:
     Path: The path to the downloaded PDB file, or None if the download failed.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory_exists(output_dir)
     pdb_url = f"{config['apis']['pdb']['url']}/{pdb_id}.pdb"
     
     try:
@@ -94,7 +130,7 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
     Returns:
     Path: The path to the extracted TSV file.
     """
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory_exists(tmp_dir)
     url = config["apis"]["alphamissense"]["url"]
     file_path = tmp_dir / Path(url).name
     tsv_path = file_path.with_suffix("")
@@ -125,23 +161,19 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
     Returns:
     pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
     """
-    # Construct the JSON file path based on the UniProt ID
     json_file = json_dir / f"{uniprot_id}.AlphaMissense_aa_substitutions.json"
 
     if not json_file.exists():
         logging.error(f"No JSON file found for {uniprot_id} at {json_file}")
         raise FileNotFoundError(f"No JSON file found for {uniprot_id} at {json_file}")
 
-    # Read the JSON file
     with open(json_file, "r") as file:
         data = json.load(file)
 
-    # Check if the uniprot_id in the JSON matches the provided uniprot_id
     if data["uniprot_id"].upper() != uniprot_id.upper():
         logging.error(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
         raise ValueError(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
 
-    # Process the JSON data to create the predictions DataFrame
     predictions = []
     for variant, variant_data in data["variants"].items():
         predictions.append(
@@ -153,8 +185,6 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
                 "classification": variant_data["am_class"],
             }
         )
-
-    # Convert the list of predictions to a DataFrame
     return pd.DataFrame(predictions)
 
 def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Path) -> pd.DataFrame:
@@ -173,7 +203,6 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
         DeprecationWarning
     )
 
-    # The original function code remains unchanged
     uniprot_id = uniprot_id.upper()
     logging.info(f"Fetching AlphaMissense predictions for {uniprot_id}")
     predictions = []
@@ -199,38 +228,3 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
         raise KeyError(f"No AlphaMissense predictions found for {uniprot_id}!")
     
     return pd.DataFrame(predictions)
-
-if __name__ == "__main__":
-    # Setup argparse to accept command-line arguments
-    import argparse
-    parser = argparse.ArgumentParser(description="Utility script for querying UniProt and downloading PDB files.")
-    
-    # Subparsers for different commands (UniProt query and PDB download)
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # Subparser for querying UniProt
-    uniprot_parser = subparsers.add_parser("uniprot", help="Query UniProt for a gene's UniProt ID based on gene name and organism ID")
-    uniprot_parser.add_argument('-n', '--gene-name', type=str, required=True, help="The gene name to search for (e.g., 'NAA10').")
-    uniprot_parser.add_argument('-i', '--organism-id', type=int, required=True, help="The organism ID (e.g., 9606 for Homo sapiens).")
-
-    # Subparser for downloading PDB files
-    pdb_parser = subparsers.add_parser("pdb", help="Download a PDB file using its PDB ID")
-    pdb_parser.add_argument('-p', '--pdb-id', type=str, required=True, help="The PDB ID of the protein structure (e.g., '6LID').")
-    pdb_parser.add_argument('-o', '--output-dir', type=Path, required=True, help="Directory to save the downloaded PDB file.")
-
-    args = parser.parse_args()
-
-    # Handle the subcommands
-    if args.command == "uniprot":
-        uniprot_id = get_uniprot_id(args.gene_name, args.organism_id)
-        if uniprot_id:
-            logging.info(f"UniProt ID for {args.gene_name} in organism {args.organism_id}: {uniprot_id}")
-        else:
-            logging.error(f"No reviewed UniProt ID found for {args.gene_name} in organism {args.organism_id}.")
-    
-    elif args.command == "pdb":
-        pdb_file_path = download_pdb_file(args.pdb_id, args.output_dir)
-        if pdb_file_path:
-            logging.info(f"PDB file saved to: {pdb_file_path}")
-        else:
-            logging.error("Failed to download the PDB file.")

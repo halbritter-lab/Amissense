@@ -3,7 +3,6 @@ import pandas as pd
 import re
 from xml.etree import ElementTree
 import time
-import argparse
 import logging
 import Amissense.scripts.utils as utils
 
@@ -11,15 +10,21 @@ import Amissense.scripts.utils as utils
 config = utils.load_config()
 
 # Setup logging configuration
-logging.basicConfig(
-    level=config["logging"]["default_level"],
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+utils.setup_logging(log_level=config["logging"]["default_level"])
 
 # Dictionary to translate 3-letter amino acid codes to single-letter symbols
 AA_DICT = config['amino_acid_codes']
 
 def fetch_summary_ids(gene_id):
+    """
+    Fetch ClinVar summary IDs for a given gene ID using E-Utilities API.
+    
+    Parameters:
+    gene_id (str): The gene ID to search for.
+
+    Returns:
+    list: List of summary IDs.
+    """
     url = f"{config['urls']['clinvar_esearch']}?db=clinvar&term={gene_id}[gene]&retmax=500"
     response = requests.get(url, timeout=5)
     response.raise_for_status()
@@ -29,6 +34,15 @@ def fetch_summary_ids(gene_id):
     return [id_elem.text for id_elem in id_list.findall("Id")]
 
 def fetch_summaries(id_batch):
+    """
+    Fetch ClinVar summaries for a batch of IDs using E-Utilities API.
+    
+    Parameters:
+    id_batch (list): List of summary IDs to fetch.
+
+    Returns:
+    dict: JSON response from the E-Utilities API.
+    """
     ids = ",".join(id_batch)
     url = f"{config['urls']['clinvar_esummary']}?db=clinvar&id={ids}&retmode=json"
     response = requests.get(url, timeout=10)
@@ -36,6 +50,15 @@ def fetch_summaries(id_batch):
     return response.json()
 
 def process_summaries(summaries):
+    """
+    Process the ClinVar summaries and extract relevant missense variant data.
+    
+    Parameters:
+    summaries (dict): JSON response from the E-Utilities API.
+
+    Returns:
+    list: Processed ClinVar variant data.
+    """
     data = []
     result = summaries["result"]
     for uid in result["uids"]:
@@ -56,7 +79,6 @@ def process_summaries(summaries):
         else:
             logging.warning(f"Skipping malformed variation name: {variation_name}")
             refseq_number, gene_id, nucleotide_change = "", "", ""
-            from_aa, location, to_aa = "", "", ""
             from_aa_1letter, to_aa_1letter = "", ""
 
         data.append(
@@ -74,6 +96,16 @@ def process_summaries(summaries):
     return data
 
 def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
+    """
+    Fetch ClinVar data for a specific gene ID in batches.
+
+    Parameters:
+    gene_id (str): The gene ID to fetch data for.
+    batch_size (int, optional): The number of IDs to fetch per batch. Defaults to the value in config.
+
+    Returns:
+    pd.DataFrame: DataFrame containing processed ClinVar data.
+    """
     if batch_size is None:
         batch_size = config['defaults']['clinvar_batch_size']  # Use default from config.json
     logging.info(f"Fetching ClinVar IDs for {gene_id}")
@@ -88,18 +120,25 @@ def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
     for index in range(0, len(ids), batch_size):
         try:
             time.sleep(1)  # Don't overwhelm ClinVar API
-            summaries = fetch_summaries(ids[index : index + batch_size])
+            summaries = fetch_summaries(ids[index: index + batch_size])
             processed_summaries.extend(process_summaries(summaries))
         except requests.HTTPError as e:
-            logging.error(f"Error fetching summaries for IDs {ids[index : index + batch_size]}: {e}")
+            logging.error(f"Error fetching summaries for IDs {ids[index: index + batch_size]}: {e}")
 
-    # Convert to dataframe and sort based on location
     output_df = pd.DataFrame(processed_summaries)
-    output_df = output_df.sort_values("location")
-    return output_df
+    return output_df.sort_values("location")
 
 def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame) -> pd.DataFrame:
-    # Merge and remove duplicate columns
+    """
+    Merge ClinVar data with AlphaMissense data.
+
+    Parameters:
+    clinvar_data (pd.DataFrame): DataFrame containing ClinVar missense data.
+    missense_data (pd.DataFrame): DataFrame containing AlphaMissense predictions.
+
+    Returns:
+    pd.DataFrame: Merged DataFrame.
+    """
     merged_df = pd.merge(
         clinvar_data,
         missense_data,
@@ -127,6 +166,8 @@ def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame)
     return merged_df
 
 if __name__ == "__main__":
+    import argparse
+
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Fetch ClinVar data for a specific gene.")
     parser.add_argument("-g", "--gene-id", type=str, required=True, help="The Gene ID to fetch data for.")

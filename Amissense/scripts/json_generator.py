@@ -10,15 +10,6 @@ import Amissense.scripts.utils as utils
 # Load configuration from config.json
 config = utils.load_config()
 
-def ensure_directory_exists(directory: Path):
-    """
-    Ensure that the given directory exists. If not, create it.
-
-    Parameters:
-    directory (Path): The path to the directory.
-    """
-    directory.mkdir(parents=True, exist_ok=True)
-
 def stream_tsv_file(tsv_file: Path, output_dir: Path):
     """
     Stream through the TSV file and generate JSON files for each uniprot_id.
@@ -27,7 +18,7 @@ def stream_tsv_file(tsv_file: Path, output_dir: Path):
     tsv_file (Path): The path to the compressed TSV file.
     output_dir (Path): The path to the directory where JSON files will be saved.
     """
-    ensure_directory_exists(output_dir)
+    utils.ensure_directory_exists(output_dir)
 
     # Initialize counters and timers
     file_count = 0
@@ -52,13 +43,11 @@ def stream_tsv_file(tsv_file: Path, output_dir: Path):
 
         # Read the file line by line
         for line in f:
-            # Skip comment lines or empty lines
             if line.startswith('#') or not line.strip():
                 continue
 
             parts = line.strip().split('\t')
 
-            # Ensure the line has enough parts (columns)
             if len(parts) < 4:
                 logging.warning(f"Skipping malformed line: {line.strip()}")
                 continue
@@ -68,42 +57,25 @@ def stream_tsv_file(tsv_file: Path, output_dir: Path):
             am_pathogenicity = float(parts[2])
             am_class = parts[3]
 
-            # If we encounter a new uniprot_id, write the current data to a JSON file
             if uniprot_id != current_uniprot_id:
                 if current_uniprot_id is not None:
-                    file_start_time = time.time()  # Start timing for this file
                     save_json_file(current_uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file)
                     file_count += 1
-                    logging.info(f"Generated {file_count} files so far.")
-                    logging.info(f"Time taken for last file: {time.time() - file_start_time:.2f} seconds")
 
-                # Start collecting data for the new uniprot_id
                 current_uniprot_id = uniprot_id
                 variants = {protein_variant: {"am_pathogenicity": am_pathogenicity, "am_class": am_class}}
                 am_pathogenicity_values = [am_pathogenicity]
                 am_class_counts = {am_class: 1}
             else:
-                # Add the variant to the current uniprot_id's list
                 variants[protein_variant] = {"am_pathogenicity": am_pathogenicity, "am_class": am_class}
                 am_pathogenicity_values.append(am_pathogenicity)
+                am_class_counts[am_class] = am_class_counts.get(am_class, 0) + 1
 
-                # Count occurrences of am_class
-                if am_class in am_class_counts:
-                    am_class_counts[am_class] += 1
-                else:
-                    am_class_counts[am_class] = 1
-
-        # Write the last uniprot_id's data to a JSON file
         if current_uniprot_id is not None:
-            file_start_time = time.time()  # Start timing for this file
             save_json_file(current_uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file)
             file_count += 1
-            logging.info(f"Generated {file_count} files so far.")
-            logging.info(f"Time taken for last file: {time.time() - file_start_time:.2f} seconds")
 
-    # Log the total time taken for all files
-    total_time = time.time() - start_time
-    logging.info(f"JSON file generation completed. Total files created: {file_count}. Time taken: {total_time:.2f} seconds.")
+    logging.info(f"JSON file generation completed. Total files created: {file_count}. Time taken: {time.time() - start_time:.2f} seconds.")
 
 def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file):
     """
@@ -118,9 +90,7 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
     tsv_file (Path): The path to the source TSV file.
     """
     
-    # Calculate statistics with rounding based on config
     precision = config['defaults']['statistical_precision']
-    total_variants = len(variants)
     am_pathogenicity_stats = {
         "average": round(np.mean(am_pathogenicity_values), precision),
         "min": round(np.min(am_pathogenicity_values), precision),
@@ -130,53 +100,32 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
         "quantile_75": round(np.percentile(am_pathogenicity_values, 75), precision)
     }
 
-    # Extract protein length from the last variant's position (e.g., Q1630S -> 1630)
     last_variant = list(variants.keys())[-1]
     protein_length = int(''.join(filter(str.isdigit, last_variant)))
-
-    # Date of creation
-    creation_date = datetime.now().isoformat()
-
-    # Extract source file name
-    source_file = tsv_file.name
 
     data = {
         "uniprot_id": uniprot_id,
         "variants": variants,
         "statistics": {
-            "total_variants": total_variants,
+            "total_variants": len(variants),
             "am_class_counts": am_class_counts,
             "am_pathogenicity_stats": am_pathogenicity_stats,
             "protein_length": protein_length,
-            "creation_date": creation_date,
-            "source_file": source_file
+            "creation_date": datetime.now().isoformat(),
+            "source_file": tsv_file.name
         }
     }
 
-    # Define the JSON file path
     json_file = output_dir / f"{uniprot_id}.AlphaMissense_aa_substitutions.json"
-
-    # Write the JSON file
     with open(json_file, 'w') as f:
         json.dump(data, f, indent=4)
     logging.info(f"Generated {json_file}")
-
-def main(tsv_file: Path, output_dir: Path):
-    """
-    Main function to parse the TSV file and generate JSON files in a streaming manner.
-
-    Parameters:
-    tsv_file (Path): The path to the compressed TSV file.
-    output_dir (Path): The path to the directory where JSON files will be saved.
-    """
-    logging.info(f"Processing {tsv_file}...")
-    stream_tsv_file(tsv_file, output_dir)
 
 if __name__ == "__main__":
     import argparse
 
     # Set up logging based on config
-    logging.basicConfig(level=config['logging']['default_level'], format=config['logging']['log_format'])
+    utils.setup_logging(log_level=config['logging']['default_level'])
 
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Generate JSON files from AlphaMissense TSV data.")
@@ -186,4 +135,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Run the main function
-    main(args.tsv_file, args.output_dir)
+    stream_tsv_file(args.tsv_file, args.output_dir)
