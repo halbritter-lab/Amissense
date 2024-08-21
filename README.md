@@ -1,5 +1,3 @@
-
-
 # Protein Pathogenicity Analysis Tool
 
 This project offers an accessible script to analyse and visualize AlphaMissense-predicted pathogenicity scores. \
@@ -26,20 +24,36 @@ It integrates with ClinVar and AlphaFold to promote a more comprehensive interpr
 
 - Python 3.11 or higher
 - Required Python packages:
-  - requests 
-  - pandas 
-  - seaborn 
-  - matplotlib 
-  - plotly 
-  - numpy 
-  - biopython 
+  - requests
+  - pandas
+  - seaborn
+  - matplotlib
+  - plotly
+  - numpy
+  - biopython
   - kaleido
 
 You can install the required packages using: \
-`pip install -r requirements.txt`
+```bash
+pip install -r requirements.txt
+```
 
-DSSP is required for secondary structure prediction. Install it on a Mac using: \
-`brew install brewsci/bio/dssp`
+Alternatively, you can create a conda environment with the required packages using: \
+```bash
+conda create --name amissense python requests pandas seaborn matplotlib plotly numpy biopython conda-forge::python-kaleido salilab::dssp
+conda activate amissense
+```
+
+DSSP is required for secondary structure prediction.
+Install it on a Mac using:
+```bash
+brew install brewsci/bio/dssp`
+```
+
+Install it on Linux using:
+```bash
+sudo apt-get install dssp
+```
 
 The script uses the following custom modules:
   - `helpers.clinvar`: to fetch ClinVar data. 
