@@ -85,7 +85,7 @@ def main():
         elif args.utils_command == "uniprot-query":
             uniprot_id = get_uniprot_id(args.gene_name, args.organism_id)
             if uniprot_id:
-                print(f"UniProt ID: {uniprot_id}")
+                logging.info(f"UniProt ID: {uniprot_id}")
             else:
                 logging.error("Failed to fetch UniProt ID.")
 

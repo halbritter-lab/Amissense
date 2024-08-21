@@ -8,13 +8,14 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.io as pio
 import argparse
+import logging
 import Amissense.scripts.utils as utils
 
 # Load configuration from config.json
 config = utils.load_config()
 
 def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir: Path):
-    print("Generating heatmap graph...")
+    logging.info("Generating heatmap graph...")
 
     # Structure predictions data
     unique_mutations = predictions["protein_variant_to"].unique()
@@ -52,7 +53,7 @@ def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir
     plt.savefig(heatmap_path, format="png", bbox_inches="tight")
     plt.close(fig1)
 
-    print(f"Heatmap stored as {heatmap_path}")
+    logging.info(f"Heatmap stored as {heatmap_path}")
 
 
 def plot_predictions_line_graph(
@@ -63,7 +64,7 @@ def plot_predictions_line_graph(
     sheets: np.ndarray,
     alphafold_confidences: Optional[np.ndarray] = None,
 ):
-    print("Generating predictions line graph...")
+    logging.info("Generating predictions line graph...")
 
     # Structure average positional pathogenicity
     predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
@@ -125,7 +126,7 @@ def plot_predictions_line_graph(
     plt.savefig(line_graph_path, format="png", bbox_inches="tight")
     plt.close(fig1)
 
-    print(f"Line graph stored as {line_graph_path}")
+    logging.info(f"Line graph stored as {line_graph_path}")
 
 
 def plot_clinvar_scatter(
@@ -166,7 +167,7 @@ def plot_clinvar_scatter(
 
     clinvar_scatter_path = out_dir / f"{gene_id}_avgAM_clinvar.png"
     plt.savefig(clinvar_scatter_path, format="png", bbox_inches="tight")
-    print(f"ClinVar graph stored at {clinvar_scatter_path}")
+    logging.info(f"ClinVar graph stored at {clinvar_scatter_path}")
     plt.close()
 
 
@@ -240,7 +241,7 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missens
     )
     sankey_path = out_dir / f"{gene_id}_sankey_diagram.png"
     pio.write_image(sankey_fig, file=sankey_path, format="png")
-    print(f"Sankey diagram stored at {sankey_path}")
+    logging.info(f"Sankey diagram stored at {sankey_path}")
 
 
 def main():
@@ -270,7 +271,7 @@ def main():
         plot_predictions_heatmap(args.uniprot_id, predictions, args.out_dir)
     elif args.graph_type == "line":
         if not args.helices or not args.sheets:
-            print("Error: Helices and sheets data are required for the line graph.")
+            logging.error("Error: Helices and sheets data are required for the line graph.")
             return
         helices = np.loadtxt(args.helices)
         sheets = np.loadtxt(args.sheets)
@@ -278,7 +279,7 @@ def main():
         plot_predictions_line_graph(args.uniprot_id, predictions, args.out_dir, helices, sheets, confidences)
     elif args.graph_type == "scatter" or args.graph_type == "sankey":
         if not args.clinvar_data:
-            print("Error: ClinVar data is required for scatter and sankey graphs.")
+            logging.error("Error: ClinVar data is required for scatter and sankey graphs.")
             return
         clinvar_data = pd.read_csv(args.clinvar_data)
         if args.graph_type == "scatter":
@@ -286,7 +287,7 @@ def main():
         else:
             plot_clinvar_sankey(args.uniprot_id, predictions, clinvar_data, args.out_dir)
     else:
-        print(f"Unknown graph type: {args.graph_type}")
+        logging.error(f"Unknown graph type: {args.graph_type}")
 
 
 if __name__ == "__main__":

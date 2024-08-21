@@ -4,10 +4,17 @@ import re
 from xml.etree import ElementTree
 import time
 import argparse
+import logging
 import Amissense.scripts.utils as utils
 
 # Load configuration from config.json
 config = utils.load_config()
+
+# Setup logging configuration
+logging.basicConfig(
+    level=config["logging"]["default_level"],
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # Dictionary to translate 3-letter amino acid codes to single-letter symbols
 AA_DICT = config['amino_acid_codes']
@@ -47,6 +54,7 @@ def process_summaries(summaries):
             from_aa_1letter = AA_DICT.get(from_aa, from_aa)  # Translate to 1-letter code
             to_aa_1letter = AA_DICT.get(to_aa, to_aa)  # Translate to 1-letter code
         else:
+            logging.warning(f"Skipping malformed variation name: {variation_name}")
             refseq_number, gene_id, nucleotide_change = "", "", ""
             from_aa, location, to_aa = "", "", ""
             from_aa_1letter, to_aa_1letter = "", ""
@@ -68,12 +76,12 @@ def process_summaries(summaries):
 def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
     if batch_size is None:
         batch_size = config['defaults']['clinvar_batch_size']  # Use default from config.json
-    print(f"Fetching ClinVar IDs for {gene_id}")
+    logging.info(f"Fetching ClinVar IDs for {gene_id}")
     try:
         ids = fetch_summary_ids(gene_id)
-        print(f"Found {len(ids)} IDs.")
-    except requests.HTTPError:
-        print(f"Error fetching ClinVar IDs for {gene_id}")
+        logging.info(f"Found {len(ids)} IDs.")
+    except requests.HTTPError as e:
+        logging.error(f"Error fetching ClinVar IDs for {gene_id}: {e}")
         return None
 
     processed_summaries = []
@@ -82,8 +90,8 @@ def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
             time.sleep(1)  # Don't overwhelm ClinVar API
             summaries = fetch_summaries(ids[index : index + batch_size])
             processed_summaries.extend(process_summaries(summaries))
-        except requests.HTTPError:
-            print(f"Error fetching summaries for following IDs: {ids[index : index + batch_size]}")
+        except requests.HTTPError as e:
+            logging.error(f"Error fetching summaries for IDs {ids[index : index + batch_size]}: {e}")
 
     # Convert to dataframe and sort based on location
     output_df = pd.DataFrame(processed_summaries)
@@ -131,7 +139,7 @@ if __name__ == "__main__":
 
     # Display the fetched data if available
     if clinvar_data is not None:
-        print(f"Fetched {clinvar_data.shape[0]} ClinVar entries for gene {args.gene_id}.")
-        print(clinvar_data)
+        logging.info(f"Fetched {clinvar_data.shape[0]} ClinVar entries for gene {args.gene_id}.")
+        logging.info(clinvar_data)
     else:
-        print(f"No data fetched for gene {args.gene_id}.")
+        logging.info(f"No data fetched for gene {args.gene_id}.")

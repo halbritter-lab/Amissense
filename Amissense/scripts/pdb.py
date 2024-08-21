@@ -5,18 +5,25 @@ from Bio.PDB import PDBParser, PDBIO, DSSP
 from pathlib import Path
 from typing import Tuple
 import argparse
+import logging
 import Amissense.scripts.utils as utils
 
 # Load configuration from utils module
 config = utils.load_config()
+
+# Setup logging configuration
+logging.basicConfig(
+    level=config["logging"]["default_level"],
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 def extract_chain_id(uniprot_id: str, pdb_path: Path) -> str:
     """Fetches the chain ID for a given UniProt ID from the PDB file"""
     for record in SeqIO.parse(pdb_path, "pdb-seqres"):
         if uniprot_id in record.dbxrefs[0]:
             return record.annotations["chain"]
+    logging.error(f"No matching chains found for {uniprot_id} in PDB file!")
     raise KeyError(f"No matching chains found for {uniprot_id} in PDB file!")
-
 
 def extract_secondary_structures(chain_id: str, pdb_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     """Extract secondary structure information from PDB file."""
@@ -41,7 +48,6 @@ def extract_secondary_structures(chain_id: str, pdb_path: Path) -> Tuple[np.ndar
 
     return helices, sheets
 
-
 def extract_positional_confidences(chain_id: str, pdb_path: Path) -> np.ndarray:
     """Extract positional confidence information from PDB file."""
     parser = PDB.PDBParser()
@@ -50,6 +56,7 @@ def extract_positional_confidences(chain_id: str, pdb_path: Path) -> np.ndarray:
     try:
         chain = structure[0][chain_id]
     except KeyError:
+        logging.error(f"No chain found with ID: {chain_id}")
         raise ValueError(f"No chain found with ID: {chain_id}")
 
     max_residue = max(residue.id[1] for residue in chain if PDB.is_aa(residue))
@@ -63,7 +70,6 @@ def extract_positional_confidences(chain_id: str, pdb_path: Path) -> np.ndarray:
 
     return positional_confidences
 
-
 def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_path: Path, out_dir: Path):
     """Generate a PDB file with pathogenicity values."""
     # Extract chain ID
@@ -75,7 +81,7 @@ def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_p
         range(0, predictions["protein_variant_pos"].max() + 1), fill_value=0
     ).to_numpy()
 
-    print("Generating PDB with pathogenicity values")
+    logging.info("Generating PDB with pathogenicity values")
     parser = PDBParser()
     structure = parser.get_structure("protein", str(pdb_path))
     for model in structure:
@@ -92,8 +98,7 @@ def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_p
     io.set_structure(structure)
     io.save(str(output_pdb_path))
 
-    print(f"Generated PDB stored as {output_pdb_path}")
-
+    logging.info(f"Generated PDB stored as {output_pdb_path}")
 
 def main():
     parser = argparse.ArgumentParser(description="Process PDB files and generate pathogenicity-modified PDB files.")
@@ -128,20 +133,19 @@ def main():
     # Handle subcommands
     if args.command == "extract_chain":
         chain_id = extract_chain_id(args.uniprot_id, args.pdb_file)
-        print(f"Extracted chain ID: {chain_id}")
+        logging.info(f"Extracted chain ID: {chain_id}")
     elif args.command == "extract_secondary":
         helices, sheets = extract_secondary_structures(args.chain_id, args.pdb_file)
-        print("Helices:", helices)
-        print("Sheets:", sheets)
+        logging.info(f"Helices: {helices}")
+        logging.info(f"Sheets: {sheets}")
     elif args.command == "extract_confidence":
         confidences = extract_positional_confidences(args.chain_id, args.pdb_file)
-        print("Positional Confidences:", confidences)
+        logging.info(f"Positional Confidences: {confidences}")
     elif args.command == "generate_pdb":
         predictions = pd.read_csv(args.predictions_file)
         generate_pathogenicity_pdb(args.uniprot_id, predictions, args.pdb_file, args.out_dir)
     else:
         parser.print_help()
-
 
 if __name__ == "__main__":
     main()

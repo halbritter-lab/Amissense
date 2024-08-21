@@ -1,4 +1,5 @@
 import argparse
+import logging
 import requests
 import pandas as pd
 from pathlib import Path
@@ -26,7 +27,7 @@ def download_alphafold_pdb(uniprot_id: str) -> Path:
 
     if not alphafold_pdb_path.exists():
         alphafold_api = f"https://alphafold.ebi.ac.uk/api/prediction/{uniprot_id.upper()}"
-        print(f"Downloading PDB file from {alphafold_api}")
+        logging.info(f"Downloading PDB file from {alphafold_api}")
         response = requests.get(alphafold_api, timeout=15)
         response.raise_for_status()
         data = response.json()
@@ -34,7 +35,7 @@ def download_alphafold_pdb(uniprot_id: str) -> Path:
         pdb_response = requests.get(pdb_url)
         pdb_response.raise_for_status()
         alphafold_pdb_path.write_bytes(pdb_response.content)
-        print(f"Download completed and saved to {alphafold_pdb_path}")
+        logging.info(f"Download completed and saved to {alphafold_pdb_path}")
 
     return alphafold_pdb_path
 
@@ -52,7 +53,7 @@ def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_p
         if experimental_pdb == Path():
             pdb_path = download_alphafold_pdb(uniprot_id)
         else:
-            print("Using experimental PDB...")
+            logging.info("Using experimental PDB...")
             pdb_path = experimental_pdb
 
         # Extract PDB details
@@ -76,9 +77,9 @@ def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_p
         graphs_module.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, output_dir)
 
     except requests.HTTPError as http_err:
-        print(f"Unexpected error during download: {http_err}")
+        logging.error(f"Unexpected error during download: {http_err}")
     except KeyError as key_err:
-        print(key_err)
+        logging.error(f"Key error: {key_err}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the AlphaMissense data processing pipeline.")

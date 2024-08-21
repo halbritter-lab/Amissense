@@ -5,6 +5,7 @@ import json
 import warnings
 import pandas as pd
 from pathlib import Path
+import logging
 
 def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
     """
@@ -21,6 +22,12 @@ def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
 
 # Load configuration at the module level
 config = load_config()
+
+# Set up logging configuration
+logging.basicConfig(
+    level=config["logging"]["default_level"],
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
@@ -47,7 +54,7 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
             if entry.get("entryType") == "UniProtKB reviewed (Swiss-Prot)":
                 return entry.get("primaryAccession")
     except requests.RequestException as e:
-        print(f"Error querying UniProt API: {e}")
+        logging.error(f"Error querying UniProt API: {e}")
 
     return None
 
@@ -71,10 +78,10 @@ def download_pdb_file(pdb_id: str, output_dir: Path) -> Path:
         pdb_file_path = output_dir / f"{pdb_id}.pdb"
         with open(pdb_file_path, "wb") as file:
             file.write(response.content)
-        print(f"Downloaded PDB file: {pdb_file_path}")
+        logging.info(f"Downloaded PDB file: {pdb_file_path}")
         return pdb_file_path
     except requests.RequestException as e:
-        print(f"Error downloading PDB file {pdb_id}: {e}")
+        logging.error(f"Error downloading PDB file {pdb_id}: {e}")
         return None
 
 def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
@@ -94,16 +101,16 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
 
     if not tsv_path.exists():
         if not file_path.exists():
-            print(f"Downloading AlphaMissense predictions from {url}")
+            logging.info(f"Downloading AlphaMissense predictions from {url}")
             response = requests.get(url)
             response.raise_for_status()
             file_path.write_bytes(response.content)
-            print("Download completed!")
+            logging.info("Download completed!")
         
-        print("Extracting predictions")
+        logging.info("Extracting predictions")
         with gzip.open(file_path, "rb") as f_in, tsv_path.open("wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
-        print("Extraction completed!")
+        logging.info("Extraction completed!")
     
     return tsv_path
 
@@ -122,6 +129,7 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
     json_file = json_dir / f"{uniprot_id}.AlphaMissense_aa_substitutions.json"
 
     if not json_file.exists():
+        logging.error(f"No JSON file found for {uniprot_id} at {json_file}")
         raise FileNotFoundError(f"No JSON file found for {uniprot_id} at {json_file}")
 
     # Read the JSON file
@@ -130,6 +138,7 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
 
     # Check if the uniprot_id in the JSON matches the provided uniprot_id
     if data["uniprot_id"].upper() != uniprot_id.upper():
+        logging.error(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
         raise ValueError(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
 
     # Process the JSON data to create the predictions DataFrame
@@ -166,7 +175,7 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
 
     # The original function code remains unchanged
     uniprot_id = uniprot_id.upper()
-    print(f"Fetching AlphaMissense predictions for {uniprot_id}")
+    logging.info(f"Fetching AlphaMissense predictions for {uniprot_id}")
     predictions = []
 
     with missense_tsv.open() as f:
@@ -186,12 +195,14 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
                 )
     
     if not predictions:
+        logging.error(f"No AlphaMissense predictions found for {uniprot_id}!")
         raise KeyError(f"No AlphaMissense predictions found for {uniprot_id}!")
     
     return pd.DataFrame(predictions)
 
 if __name__ == "__main__":
     # Setup argparse to accept command-line arguments
+    import argparse
     parser = argparse.ArgumentParser(description="Utility script for querying UniProt and downloading PDB files.")
     
     # Subparsers for different commands (UniProt query and PDB download)
@@ -213,13 +224,13 @@ if __name__ == "__main__":
     if args.command == "uniprot":
         uniprot_id = get_uniprot_id(args.gene_name, args.organism_id)
         if uniprot_id:
-            print(f"UniProt ID for {args.gene_name} in organism {args.organism_id}: {uniprot_id}")
+            logging.info(f"UniProt ID for {args.gene_name} in organism {args.organism_id}: {uniprot_id}")
         else:
-            print(f"No reviewed UniProt ID found for {args.gene_name} in organism {args.organism_id}.")
+            logging.error(f"No reviewed UniProt ID found for {args.gene_name} in organism {args.organism_id}.")
     
     elif args.command == "pdb":
         pdb_file_path = download_pdb_file(args.pdb_id, args.output_dir)
         if pdb_file_path:
-            print(f"PDB file saved to: {pdb_file_path}")
+            logging.info(f"PDB file saved to: {pdb_file_path}")
         else:
-            print("Failed to download the PDB file.")
+            logging.error("Failed to download the PDB file.")
