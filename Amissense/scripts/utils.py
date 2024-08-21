@@ -1,5 +1,7 @@
 import requests
-import argparse
+import gzip
+import shutil
+import pandas as pd
 from pathlib import Path
 
 def get_uniprot_id(gene_name: str, organism_id: int) -> str:
@@ -14,35 +16,21 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     Returns:
     str: The primary accession (UniProt ID) of the reviewed (Swiss-Prot) entry, or None if no reviewed entry is found.
     """
-    # Define the base URL for the UniProt REST API
     base_url = "https://rest.uniprot.org/uniprotkb/search"
-    
-    # Define the query parameters
     query = f"(organism_id:{organism_id}) AND (gene:{gene_name})"
     fields = "accession,reviewed,id,protein_name,gene_names,organism_name,length"
-    params = {
-        "query": query,
-        "fields": fields,
-        "format": "json"
-    }
+    params = {"query": query, "fields": fields, "format": "json"}
 
     try:
-        # Send the GET request to the UniProt API
         response = requests.get(base_url, params=params)
-        response.raise_for_status()  # Raise an error for bad responses (4xx and 5xx)
-        
-        # Parse the JSON response
+        response.raise_for_status()
         data = response.json()
-
-        # Iterate through the results to find the reviewed (Swiss-Prot) entry
         for entry in data.get("results", []):
             if entry.get("entryType") == "UniProtKB reviewed (Swiss-Prot)":
                 return entry.get("primaryAccession")
-
     except requests.RequestException as e:
         print(f"Error querying UniProt API: {e}")
 
-    # Return None if no reviewed (Swiss-Prot) entry is found
     return None
 
 def download_pdb_file(pdb_id: str, output_dir: Path) -> Path:
@@ -56,31 +44,86 @@ def download_pdb_file(pdb_id: str, output_dir: Path) -> Path:
     Returns:
     Path: The path to the downloaded PDB file, or None if the download failed.
     """
-
-    # Ensure the output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Construct the URL for the PDB file
     pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
     
     try:
-        # Send the GET request to download the PDB file
         response = requests.get(pdb_url)
-        response.raise_for_status()  # Raise an error for bad responses (4xx and 5xx)
-
-        # Define the output file path
+        response.raise_for_status()
         pdb_file_path = output_dir / f"{pdb_id}.pdb"
-
-        # Write the content to the file
         with open(pdb_file_path, "wb") as file:
             file.write(response.content)
-        
         print(f"Downloaded PDB file: {pdb_file_path}")
         return pdb_file_path
-
     except requests.RequestException as e:
         print(f"Error downloading PDB file {pdb_id}: {e}")
         return None
+
+def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
+    """
+    Download and extract AlphaMissense predictions.
+
+    Parameters:
+    tmp_dir (Path): The temporary directory where the prediction file will be downloaded and extracted.
+
+    Returns:
+    Path: The path to the extracted TSV file.
+    """
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    url = "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_aa_substitutions.tsv.gz"
+    file_path = tmp_dir / Path(url).name
+    tsv_path = file_path.with_suffix("")
+
+    if not tsv_path.exists():
+        if not file_path.exists():
+            print(f"Downloading AlphaMissense predictions from {url}")
+            response = requests.get(url)
+            response.raise_for_status()
+            file_path.write_bytes(response.content)
+            print("Download completed!")
+        
+        print("Extracting predictions")
+        with gzip.open(file_path, "rb") as f_in, tsv_path.open("wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        print("Extraction completed!")
+    
+    return tsv_path
+
+def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Path) -> pd.DataFrame:
+    """
+    Fetch AlphaMissense predictions for a specific UniProt ID.
+
+    Parameters:
+    uniprot_id (str): The UniProt ID of the protein.
+    missense_tsv (Path): The path to the AlphaMissense TSV file containing predictions.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
+    """
+    uniprot_id = uniprot_id.upper()
+    print(f"Fetching AlphaMissense predictions for {uniprot_id}")
+    predictions = []
+
+    with missense_tsv.open() as f:
+        next(f)  # Skip header
+        for line in f:
+            parts = line.strip().split("\t")
+            if parts[0] == uniprot_id:
+                prot_var = parts[1]
+                predictions.append(
+                    {
+                        "protein_variant_from": prot_var[0],
+                        "protein_variant_pos": int(prot_var[1:-1]),
+                        "protein_variant_to": prot_var[-1],
+                        "pathogenicity": float(parts[2]),
+                        "classification": parts[3],
+                    }
+                )
+    
+    if not predictions:
+        raise KeyError(f"No AlphaMissense predictions found for {uniprot_id}!")
+    
+    return pd.DataFrame(predictions)
 
 if __name__ == "__main__":
     # Setup argparse to accept command-line arguments
@@ -103,7 +146,6 @@ if __name__ == "__main__":
 
     # Handle the subcommands
     if args.command == "uniprot":
-        # Call the UniProt query function
         uniprot_id = get_uniprot_id(args.gene_name, args.organism_id)
         if uniprot_id:
             print(f"UniProt ID for {args.gene_name} in organism {args.organism_id}: {uniprot_id}")
@@ -111,7 +153,6 @@ if __name__ == "__main__":
             print(f"No reviewed UniProt ID found for {args.gene_name} in organism {args.organism_id}.")
     
     elif args.command == "pdb":
-        # Call the PDB download function
         pdb_file_path = download_pdb_file(args.pdb_id, args.output_dir)
         if pdb_file_path:
             print(f"PDB file saved to: {pdb_file_path}")
