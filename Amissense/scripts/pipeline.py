@@ -1,19 +1,13 @@
+import argparse
 import gzip
 import shutil
 import requests
-import argparse
 import pandas as pd
 from pathlib import Path
 
-import helpers.pdb
-import helpers.graphs
-import helpers.clinvar
-
-# Constants -> REMOVE THIS LATER
-# SLC7A9 __ P82251 __ 6lid.pdb
-# SLC3A1 __ Q07837 __ 6lid.pdb
-# CLDN16 __ Q9Y5I7
-# python test.py P82251 SLC7A9 --output_dir out --experimental_pdb 6lid.pdb
+import Amissense.scripts.pdb as pdb_module
+import Amissense.scripts.graphs as graphs_module
+import Amissense.scripts.clinvar as clinvar_module
 
 TMP_DIR = Path("tmp")
 
@@ -99,10 +93,12 @@ def download_alphafold_pdb(uniprot_id: str) -> Path:
     return alphafold_pdb_path
 
 
-def main(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path):
+def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path):
+    """Main function to run the pipeline."""
     ensure_directory_exist(output_dir)
 
     try:
+        # Download and fetch AlphaMissense predictions
         missense_tsv = download_predictions()
         predictions = fetch_predictions_for_id(uniprot_id, missense_tsv)
         predictions.to_csv(
@@ -110,29 +106,34 @@ def main(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path
             index=False,
         )
 
+        # Use experimental PDB if provided, otherwise download from AlphaFold
         if experimental_pdb == Path():
             pdb_path = download_alphafold_pdb(uniprot_id)
         else:
             print("Using experimental PDB...")
             pdb_path = experimental_pdb
-        chain_id = helpers.pdb.extract_chain_id(uniprot_id, pdb_path)
-        helices, sheets = helpers.pdb.extract_secondary_structures(chain_id, pdb_path)
+
+        # Extract PDB details
+        chain_id = pdb_module.extract_chain_id(uniprot_id, pdb_path)
+        helices, sheets = pdb_module.extract_secondary_structures(chain_id, pdb_path)
         pdb_confidences = (
-            helpers.pdb.extract_positional_confidences(chain_id, pdb_path) if experimental_pdb == Path() else None
+            pdb_module.extract_positional_confidences(chain_id, pdb_path) if experimental_pdb == Path() else None
         )
 
-        helpers.pdb.generate_pathogenicity_pdb(uniprot_id, predictions, pdb_path, output_dir)
-        helpers.graphs.plot_predictions_heatmap(uniprot_id, predictions, output_dir)
-        helpers.graphs.plot_predictions_line_graph(
+        # Generate PDB with pathogenicity and create visualizations
+        pdb_module.generate_pathogenicity_pdb(uniprot_id, predictions, pdb_path, output_dir)
+        graphs_module.plot_predictions_heatmap(uniprot_id, predictions, output_dir)
+        graphs_module.plot_predictions_line_graph(
             uniprot_id, predictions, output_dir, helices, sheets, pdb_confidences
         )
 
-        clinvar_data = helpers.clinvar.fetch_clinvar_data(gene_id)
-        clinvar_merged_data = helpers.clinvar.merge_missense_data(clinvar_data, predictions)
+        # Fetch and merge ClinVar data, then create visualizations
+        clinvar_data = clinvar_module.fetch_clinvar_data(gene_id)
+        clinvar_merged_data = clinvar_module.merge_missense_data(clinvar_data, predictions)
         clinvar_merged_data.to_csv(str(output_dir / f"{gene_id}_clinvar_AM.csv"), index=False)
 
-        helpers.graphs.plot_clinvar_scatter(gene_id, predictions, clinvar_merged_data, output_dir)
-        helpers.graphs.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, output_dir)
+        graphs_module.plot_clinvar_scatter(gene_id, predictions, clinvar_merged_data, output_dir)
+        graphs_module.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, output_dir)
 
     except requests.HTTPError as http_err:
         print(f"Unexpected error during download: {http_err}")
@@ -140,30 +141,15 @@ def main(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path
         print(key_err)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Process AlphaMissense predictions and generate visualizations.")
-    parser.add_argument("uniprot_id", type=str, help="The UniProt ID of the protein.")
-    parser.add_argument("gene_id", type=str, help="The Gene ID.")
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="out",
-        help="Directory to store output files.",
-    )
-    parser.add_argument(
-        "--experimental_pdb",
-        type=str,
-        default="",
-        help="Path to experimental PDB file.",
-    )
-    return parser
-
-
 if __name__ == "__main__":
-    args = build_parser().parse_args()
-    main(
-        args.uniprot_id,
-        args.gene_id,
-        Path(args.output_dir),
-        Path(args.experimental_pdb),
-    )
+    # Setup argument parsing
+    parser = argparse.ArgumentParser(description="Run the AlphaMissense data processing pipeline.")
+    parser.add_argument('-u', '--uniprot-id', type=str, required=True, help="The UniProt ID of the protein.")
+    parser.add_argument('-g', '--gene-id', type=str, required=True, help="The Gene ID.")
+    parser.add_argument('-o', '--output-dir', type=str, default="out", help="Directory to store output files.")
+    parser.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
+    
+    args = parser.parse_args()
+
+    # Call the main pipeline function
+    run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb))

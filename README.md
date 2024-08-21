@@ -56,9 +56,9 @@ sudo apt-get install dssp
 ```
 
 The script uses the following custom modules:
-  - `helpers.clinvar`: to fetch ClinVar data. 
-  - `helpers.graphs`: to produce graphs. 
-  - `helpers.pdb`: to produce a modified PDB file. 
+  - `scripts.clinvar`: to fetch ClinVar data. 
+  - `scripts.graphs`: to produce graphs. 
+  - `scripts.pdb`: to produce a modified PDB file. 
 
 
 ## Usage

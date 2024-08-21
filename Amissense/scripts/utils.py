@@ -86,18 +86,18 @@ if __name__ == "__main__":
     # Setup argparse to accept command-line arguments
     parser = argparse.ArgumentParser(description="Utility script for querying UniProt and downloading PDB files.")
     
-    # Subparsers for different commands (uniProt query and PDB download)
+    # Subparsers for different commands (UniProt query and PDB download)
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Subparser for querying UniProt
     uniprot_parser = subparsers.add_parser("uniprot", help="Query UniProt for a gene's UniProt ID based on gene name and organism ID")
-    uniprot_parser.add_argument("gene_name", type=str, help="The gene name to search for (e.g., 'NAA10').")
-    uniprot_parser.add_argument("organism_id", type=int, help="The organism ID (e.g., 9606 for Homo sapiens).")
+    uniprot_parser.add_argument('-n', '--gene-name', type=str, required=True, help="The gene name to search for (e.g., 'NAA10').")
+    uniprot_parser.add_argument('-i', '--organism-id', type=int, required=True, help="The organism ID (e.g., 9606 for Homo sapiens).")
 
     # Subparser for downloading PDB files
     pdb_parser = subparsers.add_parser("pdb", help="Download a PDB file using its PDB ID")
-    pdb_parser.add_argument("pdb_id", type=str, help="The PDB ID of the protein structure (e.g., '6LID').")
-    pdb_parser.add_argument("output_dir", type=Path, help="Directory to save the downloaded PDB file.")
+    pdb_parser.add_argument('-p', '--pdb-id', type=str, required=True, help="The PDB ID of the protein structure (e.g., '6LID').")
+    pdb_parser.add_argument('-o', '--output-dir', type=Path, required=True, help="Directory to save the downloaded PDB file.")
 
     args = parser.parse_args()
 

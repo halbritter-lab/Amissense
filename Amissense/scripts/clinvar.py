@@ -3,6 +3,7 @@ import pandas as pd
 import re
 from xml.etree import ElementTree
 import time
+import argparse
 
 # Dictionary to translate 3-letter amino acid codes to single-letter symbols
 AA_DICT = {
@@ -60,7 +61,6 @@ def process_summaries(summaries):
 
         variation_name = variant_data.get("variation_set", [{}])[0].get("variation_name", "")
         match = re.search(r"(NM_\d+\.\d+)\((\w+)\):c\.(\S+)\s+\(p\.([A-Za-z]+)(\d+)([A-Za-z]+)\)", variation_name)
-        # match = re.search(r"\(p\.([A-Za-z]+)(\d+)([A-Za-z]+)\)", variation_name)
         if match:
             refseq_number, gene_id, nucleotide_change, from_aa, location, to_aa = match.groups()
             location = int(location)  # Convert location to integer
@@ -140,7 +140,19 @@ def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame)
 
 
 if __name__ == "__main__":
-    GENE_ID = "SLC7A13"  # Replace with your desired protein ID
-    df = fetch_clinvar_data(GENE_ID)
-    print(df.shape[0])
-    print(df)
+    # Argument parser setup
+    parser = argparse.ArgumentParser(description="Fetch ClinVar data for a specific gene.")
+    parser.add_argument("-g", "--gene-id", type=str, required=True, help="The Gene ID to fetch data for.")
+    parser.add_argument("-b", "--batch-size", type=int, default=100, help="Number of IDs to fetch per batch (default: 100).")
+    
+    args = parser.parse_args()
+
+    # Fetch ClinVar data
+    clinvar_data = fetch_clinvar_data(args.gene_id, batch_size=args.batch_size)
+
+    # Display the fetched data if available
+    if clinvar_data is not None:
+        print(f"Fetched {clinvar_data.shape[0]} ClinVar entries for gene {args.gene_id}.")
+        print(clinvar_data)
+    else:
+        print(f"No data fetched for gene {args.gene_id}.")

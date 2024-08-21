@@ -4,7 +4,7 @@ from Bio import SeqIO, PDB
 from Bio.PDB import PDBParser, PDBIO, DSSP
 from pathlib import Path
 from typing import Tuple
-
+import argparse
 
 def extract_chain_id(uniprot_id: str, pdb_path: Path) -> str:
     """Fetches the chain ID for a given UniProt ID from the PDB file"""
@@ -91,10 +91,53 @@ def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_p
     print(f"Generated PDB stored as {output_pdb_path}")
 
 
-if __name__ == "__main__":
-    pdb_path = Path("test/6lid.pdb")
-    chain_id = extract_chain_id("P82251", pdb_path)
-    pos_conf = extract_positional_confidences(chain_id, pdb_path)
+def main():
+    parser = argparse.ArgumentParser(description="Process PDB files and generate pathogenicity-modified PDB files.")
+    
+    # Add subcommands for different operations
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Subcommand for extracting chain ID
+    parser_chain = subparsers.add_parser("extract_chain", help="Extract chain ID from PDB file based on UniProt ID.")
+    parser_chain.add_argument("-u", "--uniprot-id", type=str, required=True, help="UniProt ID of the protein.")
+    parser_chain.add_argument("-p", "--pdb-file", type=Path, required=True, help="Path to the PDB file.")
+    
+    # Subcommand for extracting secondary structures
+    parser_secondary = subparsers.add_parser("extract_secondary", help="Extract secondary structures from PDB file.")
+    parser_secondary.add_argument("-c", "--chain-id", type=str, required=True, help="Chain ID to extract structures from.")
+    parser_secondary.add_argument("-p", "--pdb-file", type=Path, required=True, help="Path to the PDB file.")
+    
+    # Subcommand for extracting positional confidences
+    parser_confidence = subparsers.add_parser("extract_confidence", help="Extract positional confidence from PDB file.")
+    parser_confidence.add_argument("-c", "--chain-id", type=str, required=True, help="Chain ID to extract confidences from.")
+    parser_confidence.add_argument("-p", "--pdb-file", type=Path, required=True, help="Path to the PDB file.")
+    
+    # Subcommand for generating pathogenicity PDB
+    parser_generate = subparsers.add_parser("generate_pdb", help="Generate PDB with pathogenicity values.")
+    parser_generate.add_argument("-u", "--uniprot-id", type=str, required=True, help="UniProt ID of the protein.")
+    parser_generate.add_argument("-p", "--pdb-file", type=Path, required=True, help="Path to the PDB file.")
+    parser_generate.add_argument("-o", "--out-dir", type=Path, required=True, help="Output directory for the new PDB file.")
+    parser_generate.add_argument("-d", "--predictions-file", type=Path, required=True, help="Path to the predictions CSV file.")
+    
+    args = parser.parse_args()
 
-    print(pos_conf)
-    print(len(pos_conf))
+    # Handle subcommands
+    if args.command == "extract_chain":
+        chain_id = extract_chain_id(args.uniprot_id, args.pdb_file)
+        print(f"Extracted chain ID: {chain_id}")
+    elif args.command == "extract_secondary":
+        helices, sheets = extract_secondary_structures(args.chain_id, args.pdb_file)
+        print("Helices:", helices)
+        print("Sheets:", sheets)
+    elif args.command == "extract_confidence":
+        confidences = extract_positional_confidences(args.chain_id, args.pdb_file)
+        print("Positional Confidences:", confidences)
+    elif args.command == "generate_pdb":
+        predictions = pd.read_csv(args.predictions_file)
+        generate_pathogenicity_pdb(args.uniprot_id, predictions, args.pdb_file, args.out_dir)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
