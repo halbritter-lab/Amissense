@@ -5,6 +5,7 @@ import sys
 from Amissense.scripts.pipeline import run_pipeline
 from Amissense.scripts.utils import get_uniprot_id, download_pdb_file, download_and_extract_alphamissense_predictions, load_config
 from Amissense.version import __version__ as VERSION
+from Amissense.scripts.json_generator import stream_tsv_file  # Import the function from json_generator.py
 
 # Load configuration
 config = load_config()
@@ -55,6 +56,11 @@ def main():
     parser_uniprot_query.add_argument('-n', '--gene-name', type=str, required=True, help="The gene name to search for.")
     parser_uniprot_query.add_argument('-i', '--organism-id', type=int, required=True, help="The organism ID (e.g., 9606 for Homo sapiens).")
 
+    # Subcommand for generating JSON files from TSV
+    parser_json_generator = subparsers.add_parser("generate-json", help="Generate JSON files from AlphaMissense TSV data.")
+    parser_json_generator.add_argument('tsv_file', type=Path, help="Path to the AlphaMissense_aa_substitutions.tsv.gz file.")
+    parser_json_generator.add_argument('output_dir', type=Path, help="Directory to store generated JSON files.")
+    
     args = parser.parse_args()
 
     # If no command is given, print the help message
@@ -88,6 +94,9 @@ def main():
                 logging.info(f"UniProt ID: {uniprot_id}")
             else:
                 logging.error("Failed to fetch UniProt ID.")
+    
+    elif args.command == "generate-json":
+        stream_tsv_file(args.tsv_file, args.output_dir)
 
 if __name__ == "__main__":
     main()
