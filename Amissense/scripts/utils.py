@@ -1,6 +1,8 @@
 import requests
 import gzip
 import shutil
+import json
+import warnings
 import pandas as pd
 from pathlib import Path
 
@@ -89,9 +91,50 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
     
     return tsv_path
 
+def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) -> pd.DataFrame:
+    """
+    Fetch AlphaMissense predictions for a specific UniProt ID from a JSON file.
+
+    Parameters:
+    uniprot_id (str): The UniProt ID of the protein.
+    json_dir (Path): The path to the directory containing the AlphaMissense JSON files.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
+    """
+    # Construct the JSON file path based on the UniProt ID
+    json_file = json_dir / f"{uniprot_id}.AlphaMissense_aa_substitutions.json"
+
+    if not json_file.exists():
+        raise FileNotFoundError(f"No JSON file found for {uniprot_id} at {json_file}")
+
+    # Read the JSON file
+    with open(json_file, "r") as file:
+        data = json.load(file)
+
+    # Check if the uniprot_id in the JSON matches the provided uniprot_id
+    if data["uniprot_id"].upper() != uniprot_id.upper():
+        raise ValueError(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
+
+    # Process the JSON data to create the predictions DataFrame
+    predictions = []
+    for variant, variant_data in data["variants"].items():
+        predictions.append(
+            {
+                "protein_variant_from": variant[0],
+                "protein_variant_pos": int(variant[1:-1]),
+                "protein_variant_to": variant[-1],
+                "pathogenicity": variant_data["am_pathogenicity"],
+                "classification": variant_data["am_class"],
+            }
+        )
+
+    # Convert the list of predictions to a DataFrame
+    return pd.DataFrame(predictions)
+
 def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Path) -> pd.DataFrame:
     """
-    Fetch AlphaMissense predictions for a specific UniProt ID.
+    Deprecated: Fetch AlphaMissense predictions for a specific UniProt ID from a TSV file.
 
     Parameters:
     uniprot_id (str): The UniProt ID of the protein.
@@ -100,6 +143,12 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
     Returns:
     pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
     """
+    warnings.warn(
+        "get_predictions_from_am_tsv_for_uniprot_id is deprecated. Use get_predictions_from_json_for_uniprot_id instead.",
+        DeprecationWarning
+    )
+
+    # The original function code remains unchanged
     uniprot_id = uniprot_id.upper()
     print(f"Fetching AlphaMissense predictions for {uniprot_id}")
     predictions = []

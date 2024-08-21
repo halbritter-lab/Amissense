@@ -39,9 +39,9 @@ def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_p
     ensure_directory_exist(output_dir)
 
     try:
-        # Download and fetch AlphaMissense predictions
-        missense_tsv = utils.download_and_extract_alphamissense_predictions(TMP_DIR)
-        predictions = utils.get_predictions_from_am_tsv_for_uniprot_id(uniprot_id, missense_tsv)
+        # Fetch AlphaMissense predictions from JSON
+        json_dir = TMP_DIR / "json"
+        predictions = utils.get_predictions_from_json_for_uniprot_id(uniprot_id, json_dir)
         predictions.to_csv(output_dir / f"{uniprot_id}_AM_pathogenicity_predictions.csv", index=False)
 
         # Use experimental PDB if provided, otherwise download from AlphaFold
@@ -75,7 +75,6 @@ def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_p
         print(f"Unexpected error during download: {http_err}")
     except KeyError as key_err:
         print(key_err)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the AlphaMissense data processing pipeline.")
