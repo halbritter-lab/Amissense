@@ -5,6 +5,10 @@ from datetime import datetime
 import numpy as np
 import logging
 import time
+import Amissense.scripts.utils as utils
+
+# Load configuration from config.json
+config = utils.load_config()
 
 def ensure_directory_exists(directory: Path):
     """
@@ -114,15 +118,16 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
     tsv_file (Path): The path to the source TSV file.
     """
     
-    # Calculate statistics with rounding
+    # Calculate statistics with rounding based on config
+    precision = config['defaults']['statistical_precision']
     total_variants = len(variants)
     am_pathogenicity_stats = {
-        "average": round(np.mean(am_pathogenicity_values), 4),
-        "min": round(np.min(am_pathogenicity_values), 4),
-        "max": round(np.max(am_pathogenicity_values), 4),
-        "median": round(np.median(am_pathogenicity_values), 4),
-        "quantile_25": round(np.percentile(am_pathogenicity_values, 25), 4),
-        "quantile_75": round(np.percentile(am_pathogenicity_values, 75), 4)
+        "average": round(np.mean(am_pathogenicity_values), precision),
+        "min": round(np.min(am_pathogenicity_values), precision),
+        "max": round(np.max(am_pathogenicity_values), precision),
+        "median": round(np.median(am_pathogenicity_values), precision),
+        "quantile_25": round(np.percentile(am_pathogenicity_values, 25), precision),
+        "quantile_75": round(np.percentile(am_pathogenicity_values, 75), precision)
     }
 
     # Extract protein length from the last variant's position (e.g., Q1630S -> 1630)
@@ -170,8 +175,8 @@ def main(tsv_file: Path, output_dir: Path):
 if __name__ == "__main__":
     import argparse
 
-    # Set up logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    # Set up logging based on config
+    logging.basicConfig(level=config['logging']['default_level'], format=config['logging']['log_format'])
 
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Generate JSON files from AlphaMissense TSV data.")

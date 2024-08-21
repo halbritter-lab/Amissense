@@ -6,6 +6,22 @@ import warnings
 import pandas as pd
 from pathlib import Path
 
+def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
+    """
+    Load the configuration from the specified JSON file.
+
+    Parameters:
+    config_path (Path): Path to the JSON configuration file.
+
+    Returns:
+    dict: The configuration settings as a dictionary.
+    """
+    with open(config_path, "r") as config_file:
+        return json.load(config_file)
+
+# Load configuration at the module level
+config = load_config()
+
 def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
     Query the UniProt REST API to get the primary accession (UniProt ID) for a given gene name and organism ID.
@@ -18,9 +34,9 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     Returns:
     str: The primary accession (UniProt ID) of the reviewed (Swiss-Prot) entry, or None if no reviewed entry is found.
     """
-    base_url = "https://rest.uniprot.org/uniprotkb/search"
+    base_url = config["apis"]["uniprot"]["url"]
     query = f"(organism_id:{organism_id}) AND (gene:{gene_name})"
-    fields = "accession,reviewed,id,protein_name,gene_names,organism_name,length"
+    fields = config["apis"]["uniprot"]["fields"]
     params = {"query": query, "fields": fields, "format": "json"}
 
     try:
@@ -47,7 +63,7 @@ def download_pdb_file(pdb_id: str, output_dir: Path) -> Path:
     Path: The path to the downloaded PDB file, or None if the download failed.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+    pdb_url = f"{config['apis']['pdb']['url']}/{pdb_id}.pdb"
     
     try:
         response = requests.get(pdb_url)
@@ -72,7 +88,7 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
     Path: The path to the extracted TSV file.
     """
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    url = "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_aa_substitutions.tsv.gz"
+    url = config["apis"]["alphamissense"]["url"]
     file_path = tmp_dir / Path(url).name
     tsv_path = file_path.with_suffix("")
 

@@ -5,6 +5,10 @@ from Bio.PDB import PDBParser, PDBIO, DSSP
 from pathlib import Path
 from typing import Tuple
 import argparse
+import Amissense.scripts.utils as utils
+
+# Load configuration from utils module
+config = utils.load_config()
 
 def extract_chain_id(uniprot_id: str, pdb_path: Path) -> str:
     """Fetches the chain ID for a given UniProt ID from the PDB file"""

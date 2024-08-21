@@ -2,9 +2,12 @@ import argparse
 import logging
 from pathlib import Path
 import sys
-from Amissense.scripts.pipeline import run_pipeline  # Correct import
-from Amissense.scripts.utils import get_uniprot_id, download_pdb_file, download_and_extract_alphamissense_predictions
-from Amissense.version import __version__ as VERSION  # Assuming version is stored in Amissense/version.py
+from Amissense.scripts.pipeline import run_pipeline
+from Amissense.scripts.utils import get_uniprot_id, download_pdb_file, download_and_extract_alphamissense_predictions, load_config
+from Amissense.version import __version__ as VERSION
+
+# Load configuration
+config = load_config()
 
 def setup_logging(log_level=logging.INFO, log_file=None):
     """Set up logging configuration."""
@@ -21,8 +24,8 @@ def main():
     parser = argparse.ArgumentParser(description="Amissense CLI: Process AlphaMissense data and generate visualizations.")
     
     # Adding global flags with short and long options
-    parser.add_argument('-l', '--log-level', help="Set the logging level", default="INFO")
-    parser.add_argument('-f', '--log-file', help="Set the log output file", default=None)
+    parser.add_argument('-l', '--log-level', help="Set the logging level", default=config["logging"]["default_level"])
+    parser.add_argument('-f', '--log-file', help="Set the log output file", default=config["logging"]["log_file"])
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}')
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -31,7 +34,7 @@ def main():
     parser_pipeline = subparsers.add_parser("pipeline", help="Run the full Amissense pipeline.")
     parser_pipeline.add_argument('-u', '--uniprot-id', type=str, required=True, help="The UniProt ID of the protein.")
     parser_pipeline.add_argument('-g', '--gene-id', type=str, required=True, help="The Gene ID.")
-    parser_pipeline.add_argument('-o', '--output-dir', type=str, default="out", help="Directory to store output files.")
+    parser_pipeline.add_argument('-o', '--output-dir', type=str, default=config["directories"]["output_dir"], help="Directory to store output files.")
     parser_pipeline.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
     
     # Subcommand for utils
@@ -40,12 +43,12 @@ def main():
 
     # Subcommand for download_and_extract_alphamissense_predictions
     parser_download_predictions = utils_subparsers.add_parser("download-predictions", help="Download and extract AlphaMissense predictions.")
-    parser_download_predictions.add_argument('-t', '--tmp-dir', type=Path, required=True, help="Temporary directory to download and extract the predictions.")
+    parser_download_predictions.add_argument('-t', '--tmp-dir', type=Path, default=Path(config["directories"]["tmp_dir"]), help="Temporary directory to download and extract the predictions.")
     
     # Subcommand for downloading PDB files
     parser_download_pdb = utils_subparsers.add_parser("download-pdb", help="Download a PDB file using its PDB ID.")
     parser_download_pdb.add_argument('-p', '--pdb-id', type=str, required=True, help="The PDB ID of the protein structure.")
-    parser_download_pdb.add_argument('-o', '--output-dir', type=Path, required=True, help="Directory to save the downloaded PDB file.")
+    parser_download_pdb.add_argument('-o', '--output-dir', type=Path, default=Path(config["directories"]["pdb_dir"]), help="Directory to save the downloaded PDB file.")
 
     # Subcommand for fetching UniProt ID
     parser_uniprot_query = utils_subparsers.add_parser("uniprot-query", help="Query UniProt for a gene's UniProt ID.")

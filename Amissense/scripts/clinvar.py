@@ -4,34 +4,16 @@ import re
 from xml.etree import ElementTree
 import time
 import argparse
+import Amissense.scripts.utils as utils
+
+# Load configuration from config.json
+config = utils.load_config()
 
 # Dictionary to translate 3-letter amino acid codes to single-letter symbols
-AA_DICT = {
-    "Ala": "A",
-    "Cys": "C",
-    "Asp": "D",
-    "Glu": "E",
-    "Phe": "F",
-    "Gly": "G",
-    "His": "H",
-    "Ile": "I",
-    "Lys": "K",
-    "Leu": "L",
-    "Met": "M",
-    "Asn": "N",
-    "Pro": "P",
-    "Gln": "Q",
-    "Arg": "R",
-    "Ser": "S",
-    "Thr": "T",
-    "Val": "V",
-    "Trp": "W",
-    "Tyr": "Y",
-}
-
+AA_DICT = config['amino_acid_codes']
 
 def fetch_summary_ids(gene_id):
-    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term={gene_id}[gene]&retmax=500"
+    url = f"{config['urls']['clinvar_esearch']}?db=clinvar&term={gene_id}[gene]&retmax=500"
     response = requests.get(url, timeout=5)
     response.raise_for_status()
 
@@ -39,14 +21,12 @@ def fetch_summary_ids(gene_id):
     id_list = root.find("IdList")
     return [id_elem.text for id_elem in id_list.findall("Id")]
 
-
 def fetch_summaries(id_batch):
     ids = ",".join(id_batch)
-    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=clinvar&id={ids}&retmode=json"
+    url = f"{config['urls']['clinvar_esummary']}?db=clinvar&id={ids}&retmode=json"
     response = requests.get(url, timeout=10)
     response.raise_for_status()
     return response.json()
-
 
 def process_summaries(summaries):
     data = []
@@ -85,8 +65,9 @@ def process_summaries(summaries):
 
     return data
 
-
-def fetch_clinvar_data(gene_id: str, batch_size=100) -> pd.DataFrame:
+def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
+    if batch_size is None:
+        batch_size = config['defaults']['clinvar_batch_size']  # Use default from config.json
     print(f"Fetching ClinVar IDs for {gene_id}")
     try:
         ids = fetch_summary_ids(gene_id)
@@ -108,7 +89,6 @@ def fetch_clinvar_data(gene_id: str, batch_size=100) -> pd.DataFrame:
     output_df = pd.DataFrame(processed_summaries)
     output_df = output_df.sort_values("location")
     return output_df
-
 
 def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame) -> pd.DataFrame:
     # Merge and remove duplicate columns
@@ -138,12 +118,11 @@ def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame)
 
     return merged_df
 
-
 if __name__ == "__main__":
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Fetch ClinVar data for a specific gene.")
     parser.add_argument("-g", "--gene-id", type=str, required=True, help="The Gene ID to fetch data for.")
-    parser.add_argument("-b", "--batch-size", type=int, default=100, help="Number of IDs to fetch per batch (default: 100).")
+    parser.add_argument("-b", "--batch-size", type=int, help="Number of IDs to fetch per batch.")
     
     args = parser.parse_args()
 
