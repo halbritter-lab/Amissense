@@ -8,7 +8,11 @@ import time
 import Amissense.scripts.utils as utils
 
 # Load configuration from config.json
-config = utils.load_config()
+try:
+    config = utils.load_config()
+except SystemExit:
+    logging.critical("Unable to load configuration. Exiting.")
+    raise
 
 def stream_tsv_file(tsv_file: Path, output_dir: Path):
     """
@@ -24,56 +28,66 @@ def stream_tsv_file(tsv_file: Path, output_dir: Path):
     file_count = 0
     start_time = time.time()
 
-    with gzip.open(tsv_file, 'rt') as f:
-        current_uniprot_id = None
-        variants = {}
-        am_pathogenicity_values = []
-        am_class_counts = {}
+    try:
+        with gzip.open(tsv_file, 'rt') as f:
+            current_uniprot_id = None
+            variants = {}
+            am_pathogenicity_values = []
+            am_class_counts = {}
 
-        # Skip comment lines and look for the header
-        for line in f:
-            if not line.startswith('#'):
-                header = line.strip().split('\t')
-                break
+            # Skip comment lines and look for the header
+            for line in f:
+                if not line.startswith('#'):
+                    header = line.strip().split('\t')
+                    break
 
-        # Ensure that the header has the expected columns
-        expected_columns = ['uniprot_id', 'protein_variant', 'am_pathogenicity', 'am_class']
-        if header != expected_columns:
-            raise ValueError(f"Unexpected header: {header}. Expected: {expected_columns}")
+            # Ensure that the header has the expected columns
+            expected_columns = ['uniprot_id', 'protein_variant', 'am_pathogenicity', 'am_class']
+            if header != expected_columns:
+                raise ValueError(f"Unexpected header: {header}. Expected: {expected_columns}")
 
-        # Read the file line by line
-        for line in f:
-            if line.startswith('#') or not line.strip():
-                continue
+            # Read the file line by line
+            for line in f:
+                if line.startswith('#') or not line.strip():
+                    continue
 
-            parts = line.strip().split('\t')
+                parts = line.strip().split('\t')
 
-            if len(parts) < 4:
-                logging.warning(f"Skipping malformed line: {line.strip()}")
-                continue
+                if len(parts) < 4:
+                    logging.warning(f"Skipping malformed line: {line.strip()}")
+                    continue
 
-            uniprot_id = parts[0]
-            protein_variant = parts[1]
-            am_pathogenicity = float(parts[2])
-            am_class = parts[3]
+                uniprot_id = parts[0]
+                protein_variant = parts[1]
+                try:
+                    am_pathogenicity = float(parts[2])
+                except ValueError:
+                    logging.warning(f"Invalid am_pathogenicity value on line: {line.strip()}")
+                    continue
+                am_class = parts[3]
 
-            if uniprot_id != current_uniprot_id:
-                if current_uniprot_id is not None:
-                    save_json_file(current_uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file)
-                    file_count += 1
+                if uniprot_id != current_uniprot_id:
+                    if current_uniprot_id is not None:
+                        save_json_file(current_uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file)
+                        file_count += 1
 
-                current_uniprot_id = uniprot_id
-                variants = {protein_variant: {"am_pathogenicity": am_pathogenicity, "am_class": am_class}}
-                am_pathogenicity_values = [am_pathogenicity]
-                am_class_counts = {am_class: 1}
-            else:
-                variants[protein_variant] = {"am_pathogenicity": am_pathogenicity, "am_class": am_class}
-                am_pathogenicity_values.append(am_pathogenicity)
-                am_class_counts[am_class] = am_class_counts.get(am_class, 0) + 1
+                    current_uniprot_id = uniprot_id
+                    variants = {protein_variant: {"am_pathogenicity": am_pathogenicity, "am_class": am_class}}
+                    am_pathogenicity_values = [am_pathogenicity]
+                    am_class_counts = {am_class: 1}
+                else:
+                    variants[protein_variant] = {"am_pathogenicity": am_pathogenicity, "am_class": am_class}
+                    am_pathogenicity_values.append(am_pathogenicity)
+                    am_class_counts[am_class] = am_class_counts.get(am_class, 0) + 1
 
-        if current_uniprot_id is not None:
-            save_json_file(current_uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file)
-            file_count += 1
+            # Save the last entry
+            if current_uniprot_id is not None:
+                save_json_file(current_uniprot_id, variants, am_pathogenicity_values, am_class_counts, output_dir, tsv_file)
+                file_count += 1
+
+    except (OSError, IOError) as e:
+        logging.error(f"Failed to process TSV file: {e}")
+        raise
 
     logging.info(f"JSON file generation completed. Total files created: {file_count}. Time taken: {time.time() - start_time:.2f} seconds.")
 
@@ -89,7 +103,6 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
     output_dir (Path): The directory where the JSON file will be saved.
     tsv_file (Path): The path to the source TSV file.
     """
-    
     precision = config['defaults']['statistical_precision']
     am_pathogenicity_stats = {
         "average": round(np.mean(am_pathogenicity_values), precision),
@@ -101,7 +114,11 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
     }
 
     last_variant = list(variants.keys())[-1]
-    protein_length = int(''.join(filter(str.isdigit, last_variant)))
+    try:
+        protein_length = int(''.join(filter(str.isdigit, last_variant)))
+    except ValueError:
+        logging.warning(f"Unable to determine protein length from the last variant: {last_variant}")
+        protein_length = None
 
     data = {
         "uniprot_id": uniprot_id,
@@ -117,9 +134,12 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
     }
 
     json_file = output_dir / f"{uniprot_id}.AlphaMissense_aa_substitutions.json"
-    with open(json_file, 'w') as f:
-        json.dump(data, f, indent=4)
-    logging.info(f"Generated {json_file}")
+    try:
+        with open(json_file, 'w') as f:
+            json.dump(data, f, indent=4)
+        logging.info(f"Generated {json_file}")
+    except (OSError, IOError) as e:
+        logging.error(f"Failed to write JSON file {json_file}: {e}")
 
 if __name__ == "__main__":
     import argparse
@@ -132,4 +152,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Run the main function
-    stream_tsv_file(args.tsv_file, args.output_dir)
+    try:
+        stream_tsv_file(args.tsv_file, args.output_dir)
+    except Exception as e:
+        logging.critical(f"An error occurred: {e}")
+        raise

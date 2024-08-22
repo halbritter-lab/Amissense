@@ -11,6 +11,7 @@ import Amissense.scripts.utils as utils
 import matplotlib
 from pathlib import Path
 from typing import Optional
+
 matplotlib.use('Agg')  # Use a non-interactive backend
 
 # Load configuration from config.json

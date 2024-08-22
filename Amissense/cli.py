@@ -72,7 +72,8 @@ def main():
     # Load config with error handling
     try:
         config = load_config(args.config_path)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.critical(f"Failed to load configuration: {e}")
         sys.exit(1)
 
     # Handle subcommands
