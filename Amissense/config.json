@@ -72,5 +72,10 @@
     "Likely benign": "Likely benign",
     "Uncertain significance": "Uncertain significance",
     "Conflicting classifications of pathogenicity": "Conflicting significance"
+  },
+  "retry": {
+    "max_attempts": 5,
+    "backoff_factor": 2,
+    "initial_delay": 1
   }
 }

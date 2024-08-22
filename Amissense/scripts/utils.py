@@ -1,3 +1,4 @@
+import os
 import requests
 import gzip
 import shutil
@@ -8,22 +9,42 @@ from pathlib import Path
 import logging
 from datetime import datetime
 from xml.etree import ElementTree
+import time
 
-def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
+def load_config(config_path: Path = None) -> dict:
     """
-    Load the configuration from the specified JSON file.
+    Load the configuration from the specified JSON file or an environment variable.
 
     Parameters:
     config_path (Path): Path to the JSON configuration file.
 
     Returns:
     dict: The configuration settings as a dictionary.
-    """
-    with open(config_path, "r") as config_file:
-        return json.load(config_file)
 
-# Load configuration at the module level
-config = load_config()
+    Raises:
+    FileNotFoundError: If the config file is not found.
+    json.JSONDecodeError: If the config file is malformed.
+    """
+    # Use environment variable if no config path is provided
+    if config_path is None:
+        config_path = Path(os.getenv("AMISSENSE_CONFIG_PATH", "Amissense/config.json"))
+
+    try:
+        with open(config_path, "r") as config_file:
+            return json.load(config_file)
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found: {config_path}")
+        raise
+    except json.JSONDecodeError as e:
+        logging.error(f"Malformed configuration file: {config_path} - {str(e)}")
+        raise
+
+# Load configuration at the module level with error handling
+try:
+    config = load_config()
+except (FileNotFoundError, json.JSONDecodeError) as e:
+    logging.critical(f"Failed to load configuration: {e}")
+    raise SystemExit(1)
 
 def ensure_directory_exists(directory: Path):
     """
@@ -31,8 +52,15 @@ def ensure_directory_exists(directory: Path):
 
     Parameters:
     directory (Path): The path to the directory.
+
+    Raises:
+    OSError: If the directory could not be created.
     """
-    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logging.error(f"Failed to create directory: {directory} - {str(e)}")
+        raise
 
 def setup_logging(log_level=logging.INFO, log_file=None):
     """
@@ -51,9 +79,43 @@ def setup_logging(log_level=logging.INFO, log_file=None):
     if not log_file:
         logging.getLogger().addHandler(logging.StreamHandler())
 
+def retry_request(func, *args, **kwargs):
+    """
+    Retry a function call with exponential backoff.
+
+    Parameters:
+    func (function): The function to retry.
+    *args: Positional arguments for the function.
+    **kwargs: Keyword arguments for the function.
+
+    Returns:
+    The result of the function call if successful.
+
+    Raises:
+    Exception: If the function call fails after all retries.
+    """
+    max_attempts = config["retry"]["max_attempts"]
+    backoff_factor = config["retry"]["backoff_factor"]
+    initial_delay = config["retry"]["initial_delay"]
+
+    attempt = 0
+    delay = initial_delay
+
+    while attempt < max_attempts:
+        try:
+            return func(*args, **kwargs)
+        except requests.RequestException as e:
+            attempt += 1
+            logging.warning(f"Attempt {attempt} failed: {e}. Retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay *= backoff_factor
+
+    logging.error(f"All {max_attempts} attempts failed. Unable to complete request.")
+    raise
+
 def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
     """
-    Fetch data from a given URL and return it as a parsed dictionary.
+    Fetch data from a given URL and return it as a parsed dictionary, with retry logic.
 
     Parameters:
     url (str): The URL to fetch data from.
@@ -61,10 +123,20 @@ def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
 
     Returns:
     dict: Parsed JSON or XML data from the response.
+
+    Raises:
+    requests.RequestException: If the network request fails.
+    ValueError: If the response data is not in the expected format.
     """
-    response = requests.get(url, timeout=timeout)
-    response.raise_for_status()
-    return response.json() if response.headers['Content-Type'] == 'application/json' else ElementTree.fromstring(response.content)
+    def make_request():
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        if response.headers['Content-Type'] == 'application/json':
+            return response.json()
+        else:
+            return ElementTree.fromstring(response.content)
+
+    return retry_request(make_request)
 
 def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
@@ -80,20 +152,27 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
     base_url = config["urls"]["uniprot_api"]
     query = f"(organism_id:{organism_id}) AND (gene:{gene_name})"
-    fields = config["urls"]["uniprot_api_fields"]
+    fields = "accession,reviewed,id,gene_names,organism_name"
     params = {"query": query, "fields": fields, "format": "json"}
 
-    try:
+    def make_request():
         response = requests.get(base_url, params=params)
         response.raise_for_status()
-        data = response.json()
+        return response.json()
+
+    try:
+        data = retry_request(make_request)
+
+        # Search for the "UniProtKB reviewed (Swiss-Prot)" entry
         for entry in data.get("results", []):
             if entry.get("entryType") == "UniProtKB reviewed (Swiss-Prot)":
                 return entry.get("primaryAccession")
-    except requests.RequestException as e:
-        logging.error(f"Error querying UniProt API: {e}")
 
-    return None
+        logging.warning(f"No reviewed (Swiss-Prot) entry found for gene: {gene_name}, organism: {organism_id}")
+        return None
+    except requests.RequestException as e:
+        logging.error(f"Error querying UniProt API for gene: {gene_name}, organism: {organism_id} - {str(e)}")
+        return None
 
 def generate_output_directory(base_dir: Path, gene_id: str, uniprot_id: str) -> Path:
     """
@@ -128,22 +207,31 @@ def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
     date_str = datetime.now().strftime("%Y-%m-%d")
     alphafold_pdb_path = output_dir / f"{uniprot_id.upper()}_alphafold_{date_str}.pdb"
 
-    # Try downloading from AlphaFold
     try:
         if not alphafold_pdb_path.exists():
             alphafold_api = config['urls']['alphafold_api'].format(uniprot_id=uniprot_id.upper())
             logging.info(f"Downloading PDB file from AlphaFold API: {alphafold_api}")
-            response = requests.get(alphafold_api, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            
+            def make_alphafold_request():
+                response = requests.get(alphafold_api, timeout=15)
+                response.raise_for_status()
+                return response.json()
+
+            data = retry_request(make_alphafold_request)
             pdb_url = data[0]["pdbUrl"]
-            pdb_response = requests.get(pdb_url)
-            pdb_response.raise_for_status()
-            alphafold_pdb_path.write_bytes(pdb_response.content)
+
+            def download_pdb_file():
+                response = requests.get(pdb_url)
+                response.raise_for_status()
+                return response.content
+
+            pdb_data = retry_request(download_pdb_file)
+            alphafold_pdb_path.write_bytes(pdb_data)
             logging.info(f"Download completed and saved to {alphafold_pdb_path}")
+
         return alphafold_pdb_path
     except requests.RequestException as e:
-        logging.warning(f"Failed to download from AlphaFold: {e}")
+        logging.warning(f"Failed to download from AlphaFold: {str(e)}")
 
     # If AlphaFold download fails, try RCSB PDB
     pdb_id = uniprot_id[:4].upper()  # Assuming the first 4 characters represent the PDB ID
@@ -152,14 +240,19 @@ def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
     
     try:
         logging.info(f"Downloading PDB file from RCSB PDB: {pdb_url}")
-        response = requests.get(pdb_url)
-        response.raise_for_status()
+        
+        def make_rcsb_request():
+            response = requests.get(pdb_url)
+            response.raise_for_status()
+            return response.content
+
+        pdb_data = retry_request(make_rcsb_request)
         with open(pdb_file_path, "wb") as file:
-            file.write(response.content)
+            file.write(pdb_data)
         logging.info(f"Downloaded PDB file: {pdb_file_path}")
         return pdb_file_path
     except requests.RequestException as e:
-        logging.error(f"Failed to download PDB file from RCSB PDB: {e}")
+        logging.error(f"Failed to download PDB file from RCSB PDB: {str(e)}")
         return None
 
 def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
@@ -177,19 +270,31 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
     file_path = tmp_dir / Path(url).name
     tsv_path = file_path.with_suffix("")
 
-    if not tsv_path.exists():
-        if not file_path.exists():
-            logging.info(f"Downloading AlphaMissense predictions from {url}")
-            response = requests.get(url)
-            response.raise_for_status()
-            file_path.write_bytes(response.content)
-            logging.info("Download completed!")
+    try:
+        if not tsv_path.exists():
+            if not file_path.exists():
+                logging.info(f"Downloading AlphaMissense predictions from {url}")
+                
+                def make_download_request():
+                    response = requests.get(url)
+                    response.raise_for_status()
+                    return response.content
+
+                file_data = retry_request(make_download_request)
+                file_path.write_bytes(file_data)
+                logging.info("Download completed!")
         
-        logging.info("Extracting predictions")
-        with gzip.open(file_path, "rb") as f_in, tsv_path.open("wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        logging.info("Extraction completed!")
-    
+            logging.info("Extracting predictions")
+            with gzip.open(file_path, "rb") as f_in, tsv_path.open("wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            logging.info("Extraction completed!")
+    except requests.RequestException as e:
+        logging.error(f"Failed to download AlphaMissense predictions: {str(e)}")
+        raise
+    except OSError as e:
+        logging.error(f"Failed to extract AlphaMissense predictions: {str(e)}")
+        raise
+
     return tsv_path
 
 def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) -> pd.DataFrame:
@@ -202,23 +307,24 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
 
     Returns:
     pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
+
+    Raises:
+    FileNotFoundError: If the JSON file for the UniProt ID is not found.
+    ValueError: If there is a mismatch between the UniProt ID in the file and the requested ID.
     """
     json_file = json_dir / f"{uniprot_id}.AlphaMissense_aa_substitutions.json"
 
-    if not json_file.exists():
-        logging.error(f"No JSON file found for {uniprot_id} at {json_file}")
-        raise FileNotFoundError(f"No JSON file found for {uniprot_id} at {json_file}")
+    try:
+        if not json_file.exists():
+            raise FileNotFoundError(f"No JSON file found for {uniprot_id} at {json_file}")
 
-    with open(json_file, "r") as file:
-        data = json.load(file)
+        with open(json_file, "r") as file:
+            data = json.load(file)
 
-    if data["uniprot_id"].upper() != uniprot_id.upper():
-        logging.error(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
-        raise ValueError(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
+        if data["uniprot_id"].upper() != uniprot_id.upper():
+            raise ValueError(f"UniProt ID mismatch: Expected {uniprot_id}, found {data['uniprot_id']}")
 
-    predictions = []
-    for variant, variant_data in data["variants"].items():
-        predictions.append(
+        predictions = [
             {
                 "protein_variant_from": variant[0],
                 "protein_variant_pos": int(variant[1:-1]),
@@ -226,8 +332,16 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
                 "pathogenicity": variant_data["am_pathogenicity"],
                 "classification": variant_data["am_class"],
             }
-        )
-    return pd.DataFrame(predictions)
+            for variant, variant_data in data["variants"].items()
+        ]
+        return pd.DataFrame(predictions)
+
+    except (FileNotFoundError, ValueError) as e:
+        logging.error(str(e))
+        raise
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse JSON file for {uniprot_id}: {str(e)}")
+        raise
 
 def get_predictions_from_static_api(uniprot_id: str) -> pd.DataFrame:
     """
@@ -238,28 +352,33 @@ def get_predictions_from_static_api(uniprot_id: str) -> pd.DataFrame:
 
     Returns:
     pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
+
+    Raises:
+    requests.RequestException: If the network request fails.
     """
     api_url = f"{config['urls']['static_json_api']}{uniprot_id}.AlphaMissense_aa_substitutions.json"
     
-    try:
+    def make_request():
         response = requests.get(api_url)
         response.raise_for_status()
-        data = response.json()
+        return response.json()
 
-        predictions = []
-        for variant, variant_data in data["variants"].items():
-            predictions.append(
-                {
-                    "protein_variant_from": variant[0],
-                    "protein_variant_pos": int(variant[1:-1]),
-                    "protein_variant_to": variant[-1],
-                    "pathogenicity": variant_data["am_pathogenicity"],
-                    "classification": variant_data["am_class"],
-                }
-            )
+    try:
+        data = retry_request(make_request)
+
+        predictions = [
+            {
+                "protein_variant_from": variant[0],
+                "protein_variant_pos": int(variant[1:-1]),
+                "protein_variant_to": variant[-1],
+                "pathogenicity": variant_data["am_pathogenicity"],
+                "classification": variant_data["am_class"],
+            }
+            for variant, variant_data in data["variants"].items()
+        ]
         return pd.DataFrame(predictions)
     except requests.RequestException as e:
-        logging.error(f"Failed to fetch AlphaMissense predictions from the static API: {e}")
+        logging.error(f"Failed to fetch AlphaMissense predictions from the static API: {str(e)}")
         raise
 
 def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Path) -> pd.DataFrame:
@@ -278,28 +397,31 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
         DeprecationWarning
     )
 
-    uniprot_id = uniprot_id.upper()
-    logging.info(f"Fetching AlphaMissense predictions for {uniprot_id}")
-    predictions = []
+    try:
+        uniprot_id = uniprot_id.upper()
+        logging.info(f"Fetching AlphaMissense predictions for {uniprot_id}")
+        predictions = []
 
-    with missense_tsv.open() as f:
-        next(f)  # Skip header
-        for line in f:
-            parts = line.strip().split("\t")
-            if parts[0] == uniprot_id:
-                prot_var = parts[1]
-                predictions.append(
-                    {
-                        "protein_variant_from": prot_var[0],
-                        "protein_variant_pos": int(prot_var[1:-1]),
-                        "protein_variant_to": prot_var[-1],
-                        "pathogenicity": float(parts[2]),
-                        "classification": parts[3],
-                    }
-                )
-    
-    if not predictions:
-        logging.error(f"No AlphaMissense predictions found for {uniprot_id}!")
-        raise KeyError(f"No AlphaMissense predictions found for {uniprot_id}!")
-    
-    return pd.DataFrame(predictions)
+        with missense_tsv.open() as f:
+            next(f)  # Skip header
+            for line in f:
+                parts = line.strip().split("\t")
+                if parts[0] == uniprot_id:
+                    prot_var = parts[1]
+                    predictions.append(
+                        {
+                            "protein_variant_from": prot_var[0],
+                            "protein_variant_pos": int(prot_var[1:-1]),
+                            "protein_variant_to": prot_var[-1],
+                            "pathogenicity": float(parts[2]),
+                            "classification": parts[3],
+                        }
+                    )
+        
+        if not predictions:
+            raise KeyError(f"No AlphaMissense predictions found for {uniprot_id}!")
+        
+        return pd.DataFrame(predictions)
+    except (FileNotFoundError, KeyError) as e:
+        logging.error(str(e))
+        raise

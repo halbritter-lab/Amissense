@@ -10,22 +10,31 @@ import Amissense.scripts.graphs as graphs_module
 import Amissense.scripts.clinvar as clinvar_module
 import Amissense.scripts.utils as utils
 
-# Load configuration from config.json
-config = utils.load_config()
+# Load configuration with error handling
+try:
+    config = utils.load_config()
+except SystemExit:
+    logging.critical("Unable to load configuration. Exiting.")
+    raise
 
 def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimental_pdb: Path = None, source: str = 'api'):
     """Main function to run the pipeline."""
-    # Generate structured output directory name with date
-    output_dir = utils.generate_output_directory(base_output_dir, gene_id, uniprot_id)
-
-    # Create subdirectories for figures, tables, and pdb files directly within the output directory
-    figures_dir = output_dir / "figures"
-    tables_dir = output_dir / "tables"
-    pdb_dir = output_dir / "pdb"
     
-    utils.ensure_directory_exists(figures_dir)
-    utils.ensure_directory_exists(tables_dir)
-    utils.ensure_directory_exists(pdb_dir)
+    # Ensure the base directory exists
+    try:
+        output_dir = utils.generate_output_directory(base_output_dir, gene_id, uniprot_id)
+
+        # Create subdirectories
+        figures_dir = output_dir / "figures"
+        tables_dir = output_dir / "tables"
+        pdb_dir = output_dir / "pdb"
+        
+        utils.ensure_directory_exists(figures_dir)
+        utils.ensure_directory_exists(tables_dir)
+        utils.ensure_directory_exists(pdb_dir)
+    except OSError as e:
+        logging.critical(f"Failed to create output directories: {e}")
+        return
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -64,10 +73,16 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
         graphs_module.plot_clinvar_scatter(gene_id, predictions, clinvar_merged_data, figures_dir)
         graphs_module.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, figures_dir)
 
-    except requests.HTTPError as http_err:
-        logging.error(f"Unexpected error during download: {http_err}")
-    except KeyError as key_err:
-        logging.error(f"Key error: {key_err}")
+    except requests.RequestException as e:
+        logging.error(f"Network-related error: {e}")
+    except FileNotFoundError as e:
+        logging.error(f"File-related error: {e}")
+    except KeyError as e:
+        logging.error(f"Key-related error: {e}")
+    except pd.errors.EmptyDataError as e:
+        logging.error(f"Data-related error (empty file): {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the AlphaMissense data processing pipeline.")
@@ -78,4 +93,9 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--source', type=str, choices=['api', 'local'], default='api', help="Source for fetching AlphaMissense predictions (default: api).")
 
     args = parser.parse_args()
-    run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb) if args.experimental_pdb else None, args.source)
+
+    try:
+        run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb) if args.experimental_pdb else None, args.source)
+    except Exception as e:
+        logging.critical(f"Pipeline failed: {e}")
+        raise
