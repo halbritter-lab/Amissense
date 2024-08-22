@@ -15,14 +15,18 @@ config = utils.load_config()
 # Use the TMP_DIR from the config file
 TMP_DIR = Path(config['directories']['tmp_dir'])
 
-def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path):
+def run_pipeline(uniprot_id: str, gene_id: str, output_dir: Path, experimental_pdb: Path, source: str):
     """Main function to run the pipeline."""
     utils.ensure_directory_exists(output_dir)
 
     try:
-        # Fetch AlphaMissense predictions from JSON
-        json_dir = Path(config['directories']['json_dir'])
-        predictions = utils.get_predictions_from_json_for_uniprot_id(uniprot_id, json_dir)
+        # Fetch AlphaMissense predictions based on the source
+        if source == 'api':
+            predictions = utils.get_predictions_from_static_api(uniprot_id)
+        else:
+            json_dir = Path(config['directories']['json_dir'])
+            predictions = utils.get_predictions_from_json_for_uniprot_id(uniprot_id, json_dir)
+        
         predictions.to_csv(output_dir / f"{uniprot_id}_AM_pathogenicity_predictions.csv", index=False)
 
         # Use experimental PDB if provided, otherwise download from AlphaFold
@@ -77,6 +81,7 @@ if __name__ == "__main__":
     parser.add_argument('-g', '--gene-id', type=str, required=True, help="The Gene ID.")
     parser.add_argument('-o', '--output-dir', type=str, default=config['directories']['output_dir'], help="Directory to store output files.")
     parser.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
+    parser.add_argument('-s', '--source', type=str, choices=['api', 'local'], default='api', help="Source for fetching AlphaMissense predictions (default: api).")
 
     args = parser.parse_args()
-    run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb))
+    run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb), args.source)

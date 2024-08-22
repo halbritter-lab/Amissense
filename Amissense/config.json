@@ -10,12 +10,13 @@
     "json_dir": "tmp/json"
   },
   "urls": {
-    "uniprot_api": "https://rest.uniprot.org/uniprotkb/search",
-    "alphamissense_predictions": "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_aa_substitutions.tsv.gz",
-    "pdb_download": "https://files.rcsb.org/download/{pdb_id}.pdb",
-    "clinvar_esearch": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
-    "clinvar_esummary": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-  },
+      "uniprot_api": "https://rest.uniprot.org/uniprotkb/search",
+      "alphamissense_predictions": "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_aa_substitutions.tsv.gz",
+      "pdb_download": "https://files.rcsb.org/download/{pdb_id}.pdb",
+      "clinvar_esearch": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+      "clinvar_esummary": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+      "static_json_api": "https://raw.githubusercontent.com/halbritter-lab/alpha-missense-scores/main/scores/json/"
+    },
   "defaults": {
     "statistical_precision": 4,
     "clinvar_batch_size": 100,

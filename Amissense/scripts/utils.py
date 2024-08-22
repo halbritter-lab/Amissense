@@ -187,6 +187,39 @@ def get_predictions_from_json_for_uniprot_id(uniprot_id: str, json_dir: Path) ->
         )
     return pd.DataFrame(predictions)
 
+def get_predictions_from_static_api(uniprot_id: str) -> pd.DataFrame:
+    """
+    Fetch AlphaMissense predictions for a specific UniProt ID from the static JSON API.
+
+    Parameters:
+    uniprot_id (str): The UniProt ID of the protein.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
+    """
+    api_url = f"https://raw.githubusercontent.com/halbritter-lab/alpha-missense-scores/main/scores/json/{uniprot_id}.AlphaMissense_aa_substitutions.json"
+    
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        data = response.json()
+
+        predictions = []
+        for variant, variant_data in data["variants"].items():
+            predictions.append(
+                {
+                    "protein_variant_from": variant[0],
+                    "protein_variant_pos": int(variant[1:-1]),
+                    "protein_variant_to": variant[-1],
+                    "pathogenicity": variant_data["am_pathogenicity"],
+                    "classification": variant_data["am_class"],
+                }
+            )
+        return pd.DataFrame(predictions)
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch AlphaMissense predictions from the static API: {e}")
+        raise
+
 def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Path) -> pd.DataFrame:
     """
     Deprecated: Fetch AlphaMissense predictions for a specific UniProt ID from a TSV file.
