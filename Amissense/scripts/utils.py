@@ -1,3 +1,4 @@
+import os
 import requests
 import gzip
 import shutil
@@ -9,18 +10,34 @@ import logging
 from datetime import datetime
 from xml.etree import ElementTree
 
-def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
+def load_config(config_path: Path = None) -> dict:
     """
-    Load the configuration from the specified JSON file.
+    Load the configuration from the specified JSON file or an environment variable.
 
     Parameters:
     config_path (Path): Path to the JSON configuration file.
 
     Returns:
     dict: The configuration settings as a dictionary.
+
+    Raises:
+    FileNotFoundError: If the config file is not found.
+    json.JSONDecodeError: If the config file is malformed.
     """
-    with open(config_path, "r") as config_file:
-        return json.load(config_file)
+    # Use environment variable if no config path is provided
+    if config_path is None:
+        config_path = Path(os.getenv("AMISSENSE_CONFIG_PATH", "Amissense/config.json"))
+
+    try:
+        with open(config_path, "r") as config_file:
+            return json.load(config_file)
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found: {config_path}")
+        raise
+    except json.JSONDecodeError:
+        logging.error(f"Malformed configuration file: {config_path}")
+        raise
+
 
 # Load configuration at the module level
 config = load_config()
