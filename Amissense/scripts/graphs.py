@@ -2,14 +2,16 @@ import re
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from pathlib import Path
-from typing import Optional
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.io as pio
 import argparse
 import logging
 import Amissense.scripts.utils as utils
+import matplotlib
+from pathlib import Path
+from typing import Optional
+matplotlib.use('Agg')  # Use a non-interactive backend
 
 # Load configuration from config.json
 config = utils.load_config()

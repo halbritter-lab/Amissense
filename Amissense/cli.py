@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 import sys
 from Amissense.scripts.pipeline import run_pipeline
-from Amissense.scripts.utils import get_uniprot_id, download_pdb_file, download_and_extract_alphamissense_predictions, load_config
+from Amissense.scripts.utils import get_uniprot_id, download_pdb, download_and_extract_alphamissense_predictions, load_config
 from Amissense.version import __version__ as VERSION
 from Amissense.scripts.json_generator import stream_tsv_file  # Import the function from json_generator.py
 
@@ -37,6 +37,7 @@ def main():
     parser_pipeline.add_argument('-g', '--gene-id', type=str, required=True, help="The Gene ID.")
     parser_pipeline.add_argument('-o', '--output-dir', type=str, default=config["directories"]["output_dir"], help="Directory to store output files.")
     parser_pipeline.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
+    parser_pipeline.add_argument('-s', '--source', type=str, choices=['api', 'local'], default='api', help="Source for fetching AlphaMissense predictions (default: api).")
     
     # Subcommand for utils
     parser_utils = subparsers.add_parser("utils", help="Utility commands like fetching predictions, downloading PDB files, and querying UniProt.")
@@ -74,7 +75,7 @@ def main():
 
     # Handle subcommands
     if args.command == "pipeline":
-        run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb))
+        run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb), args.source)
     
     elif args.command == "utils":
         # If no utils subcommand is given, show the help for utils subcommands
@@ -86,7 +87,7 @@ def main():
             download_and_extract_alphamissense_predictions(args.tmp_dir)
         
         elif args.utils_command == "download-pdb":
-            download_pdb_file(args.pdb_id, args.output_dir)
+            download_pdb(args.pdb_id, args.output_dir)
         
         elif args.utils_command == "uniprot-query":
             uniprot_id = get_uniprot_id(args.gene_name, args.organism_id)
