@@ -7,10 +7,15 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.io as pio
+import argparse
+import logging
+import Amissense.scripts.utils as utils
 
+# Load configuration from config.json
+config = utils.load_config()
 
 def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir: Path):
-    print("Generating heatmap graph...")
+    logging.info("Generating heatmap graph...")
 
     # Structure predictions data
     unique_mutations = predictions["protein_variant_to"].unique()
@@ -27,15 +32,15 @@ def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir
         heatmap_data[y, x] = row.pathogenicity
 
     # Create graph
-    fig1, ax1 = plt.subplots(figsize=(30, 10))
+    fig1, ax1 = plt.subplots(figsize=tuple(config['defaults']['plot_figure_size']))
 
-    colormap = "coolwarm"
+    colormap = config['defaults']['plot_colormap']
     heatmap = ax1.imshow(heatmap_data, aspect="auto", interpolation="none", cmap=colormap)
     yticks = np.arange(len(unique_mutations)) + 0.5
 
     ax1.set_yticks(yticks)
     ax1.set_yticklabels(unique_mutations)
-    ax1.set_ylim(20, 0)  # Adjust as needed
+    ax1.set_ylim(config['defaults']['heatmap_y_limits'])  # Use configurable Y-axis limits
     ax1.set_xlabel("Residue Sequence Number")
     ax1.set_ylabel("Alternate Amino Acid")
     ax1.set_title("Pathogenicity Heatmap")
@@ -48,7 +53,7 @@ def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir
     plt.savefig(heatmap_path, format="png", bbox_inches="tight")
     plt.close(fig1)
 
-    print(f"Heatmap stored as {heatmap_path}")
+    logging.info(f"Heatmap stored as {heatmap_path}")
 
 
 def plot_predictions_line_graph(
@@ -59,7 +64,7 @@ def plot_predictions_line_graph(
     sheets: np.ndarray,
     alphafold_confidences: Optional[np.ndarray] = None,
 ):
-    print("Generating predictions line graph...")
+    logging.info("Generating predictions line graph...")
 
     # Structure average positional pathogenicity
     predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
@@ -68,7 +73,7 @@ def plot_predictions_line_graph(
     ).to_numpy()
 
     # Generate and store line graph
-    fig1, ax1 = plt.subplots(figsize=(30, 10))
+    fig1, ax1 = plt.subplots(figsize=tuple(config['defaults']['plot_figure_size']))
 
     # Average pathogenicity
     ax1.plot(positional_means, label="Mean Pathogenicity", color="green")
@@ -121,20 +126,7 @@ def plot_predictions_line_graph(
     plt.savefig(line_graph_path, format="png", bbox_inches="tight")
     plt.close(fig1)
 
-    print(f"Line graph stored as {line_graph_path}")
-
-
-def _clinvar_classification_mapping() -> dict:
-    return {
-        "Pathogenic": "Likely pathogenic",
-        "Pathogenic/Likely pathogenic": "Likely pathogenic",
-        "Likely pathogenic": "Likely pathogenic",
-        "Benign": "Likely benign",
-        "Benign/Likely benign": "Likely benign",
-        "Likely benign": "Likely benign",
-        "Uncertain significance": "Uncertain significance",
-        "Conflicting classifications of pathogenicity": "Conflicting significance",
-    }
+    logging.info(f"Line graph stored as {line_graph_path}")
 
 
 def plot_clinvar_scatter(
@@ -142,7 +134,7 @@ def plot_clinvar_scatter(
 ):
     # Map classification to reduce number of labels
     clinvar_missense_data["clinvar_classification_mapped"] = clinvar_missense_data["ClinVar classification"].map(
-        _clinvar_classification_mapping()
+        config['clinvar_classification_mapping']
     )
 
     # Structure average positional pathogenicity
@@ -151,27 +143,20 @@ def plot_clinvar_scatter(
         range(0, missense_data["protein_variant_pos"].max() + 1), fill_value=0
     ).to_numpy()
 
-    plt.figure(figsize=(20, 6))
+    plt.figure(figsize=tuple(config['defaults']['scatter_figure_size']))
 
     # Line plot of positional pathogenicity means
     plt.plot(positional_means, label="Mean AlphaMissense Pathogenicity", color="green", alpha=0.5, linewidth=1)
 
     # Scatterplot
-    pathogenicity_palette = {
-        "Likely pathogenic": "orangered",
-        "Likely benign": "royalblue",
-        "Uncertain significance": "orange",
-        "Conflicting significance": "gray",
-    }
-
     sns.scatterplot(
         data=clinvar_missense_data,
         x="Amino acid change - location",
         y="AM pathogenicity score",
         hue="clinvar_classification_mapped",
-        palette=pathogenicity_palette,
-        hue_order=pathogenicity_palette.keys(),
-        s=100,
+        palette=config['defaults']['scatter_palette'],  # Use configurable color palette
+        hue_order=config['defaults']['scatter_palette'].keys(),
+        s=config['defaults']['scatter_marker_size'],  # Use configurable marker size
     )
 
     # General plot settings
@@ -182,51 +167,22 @@ def plot_clinvar_scatter(
 
     clinvar_scatter_path = out_dir / f"{gene_id}_avgAM_clinvar.png"
     plt.savefig(clinvar_scatter_path, format="png", bbox_inches="tight")
-    print(f"ClinVar graph stored at {clinvar_scatter_path}")
+    logging.info(f"ClinVar graph stored at {clinvar_scatter_path}")
     plt.close()
-
-
-def _am_mapping() -> dict:
-    return {
-        "benign": "Likely benign",
-        "ambiguous": "Uncertain significance",
-        "pathogenic": "Likely pathogenic",
-    }
 
 
 def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missense_data: pd.DataFrame, out_dir: Path):
     # Map classification to reduce number of labels
     clinvar_missense_data["clinvar_classification_mapped"] = clinvar_missense_data["ClinVar classification"].map(
-        _clinvar_classification_mapping()
+        config['clinvar_classification_mapping']
     )
 
     # Match AM labels to remapped ClinVar labels
-    clinvar_missense_data["am_classification_mapped"] = clinvar_missense_data["AM classification"].map(_am_mapping())
-
-    """
-    # Create the clinvar_amissense DataFrame
-    clinvar_amissense = merged_data[["germline_classification", "pathogenicity"]].copy()
-
-    # Apply the classification mappings
-    clinvar_amissense["classification_mapped"] = clinvar_amissense["germline_classification"].map(
-        _germline_classification_mapping()
-    )
-    clinvar_amissense["pathogenicity_mapped"] = clinvar_amissense["pathogenicity"].apply(_pathogenicity_mapping)
-    
-
-    # Append new column to check if classification_mapped equals pathogenicity_mapped
-    clinvar_amissense["match"] = clinvar_amissense.apply(
-        lambda row: "yes" if row["classification_mapped"] == row["pathogenicity_mapped"] else "no", axis=1
-    )
-
-    # Save the clinvar_amissense DataFrame as a CSV file
-    # clinvar_amissense.to_csv(str(out_dir / f"{gene_id}_AM_clinvar_matched.csv"), index=False)
-
-    # Calculate and print the percentages of 'yes' and 'no'
-    match_counts = clinvar_amissense["match"].value_counts(normalize=True) * 100
-    print(f"Percentage agreement between ClinVar and AlphaMissense: {match_counts.get('yes', 0):.2f}%")
-    print(f"Percentage disagreement between ClinVar and AlphaMissense: {match_counts.get('no', 0):.2f}%")
-    """
+    clinvar_missense_data["am_classification_mapped"] = clinvar_missense_data["AM classification"].map({
+        "benign": "Likely benign",
+        "ambiguous": "Uncertain significance",
+        "pathogenic": "Likely pathogenic",
+    })
 
     unival_df = (
         clinvar_missense_data.groupby(["clinvar_classification_mapped", "am_classification_mapped"])
@@ -257,9 +213,12 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missens
         data=[
             go.Sankey(
                 node=dict(
-                    pad=15,
-                    thickness=20,
-                    line=dict(color="black", width=0.5),
+                    pad=config['defaults']['sankey_node_pad'],  # Configurable node padding
+                    thickness=config['defaults']['sankey_node_thickness'],  # Configurable node thickness
+                    line=dict(
+                        color=config['defaults']['sankey_line_color'],  # Configurable line color
+                        width=config['defaults']['sankey_line_width'],  # Configurable line width
+                    ),
                     label=node_labels,
                     color=["lightblue"] * len(clinvar_labels) + ["lightgreen"] * len(am_labels),
                 ),
@@ -277,9 +236,59 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missens
         title_text=f"{gene_id} ClinVar vs. AlphaMissense Classification",
         font_size=15,
         autosize=False,
-        width=1200,
-        height=800,
+        width=config['defaults']['sankey_plot_width'],  # Configurable plot width
+        height=config['defaults']['sankey_plot_height'],  # Configurable plot height
     )
     sankey_path = out_dir / f"{gene_id}_sankey_diagram.png"
     pio.write_image(sankey_fig, file=sankey_path, format="png")
-    print(f"Sankey diagram stored at {sankey_path}")
+    logging.info(f"Sankey diagram stored at {sankey_path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate visualizations for AlphaMissense predictions.")
+    
+    # Add arguments for the script
+    parser.add_argument("-g", "--graph-type", type=str, required=True, choices=["heatmap", "line", "scatter", "sankey"], 
+                        help="Type of graph to generate: heatmap, line, scatter, or sankey.")
+    parser.add_argument("-u", "--uniprot-id", type=str, required=True, help="UniProt ID of the protein.")
+    parser.add_argument("-o", "--out-dir", type=Path, required=True, help="Output directory for saving the graph.")
+    parser.add_argument("-p", "--predictions", type=Path, required=True, help="Path to the predictions CSV file.")
+    parser.add_argument("-c", "--clinvar-data", type=Path, help="Path to the ClinVar data CSV file (required for scatter and sankey).")
+    parser.add_argument("--helices", type=Path, help="Path to the helices data file (required for line graph).")
+    parser.add_argument("--sheets", type=Path, help="Path to the sheets data file (required for line graph).")
+    parser.add_argument("--confidences", type=Path, help="Path to the AlphaFold confidences data file (optional for line graph).")
+    
+    args = parser.parse_args()
+
+    # Load predictions data
+    predictions = pd.read_csv(args.predictions)
+
+    # Create output directory if it doesn't exist
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Call appropriate plotting function based on graph type
+    if args.graph_type == "heatmap":
+        plot_predictions_heatmap(args.uniprot_id, predictions, args.out_dir)
+    elif args.graph_type == "line":
+        if not args.helices or not args.sheets:
+            logging.error("Error: Helices and sheets data are required for the line graph.")
+            return
+        helices = np.loadtxt(args.helices)
+        sheets = np.loadtxt(args.sheets)
+        confidences = np.loadtxt(args.confidences) if args.confidences else None
+        plot_predictions_line_graph(args.uniprot_id, predictions, args.out_dir, helices, sheets, confidences)
+    elif args.graph_type == "scatter" or args.graph_type == "sankey":
+        if not args.clinvar_data:
+            logging.error("Error: ClinVar data is required for scatter and sankey graphs.")
+            return
+        clinvar_data = pd.read_csv(args.clinvar_data)
+        if args.graph_type == "scatter":
+            plot_clinvar_scatter(args.uniprot_id, predictions, clinvar_data, args.out_dir)
+        else:
+            plot_clinvar_sankey(args.uniprot_id, predictions, clinvar_data, args.out_dir)
+    else:
+        logging.error(f"Unknown graph type: {args.graph_type}")
+
+
+if __name__ == "__main__":
+    main()
