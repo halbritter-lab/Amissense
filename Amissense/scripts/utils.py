@@ -6,6 +6,7 @@ import warnings
 import pandas as pd
 from pathlib import Path
 import logging
+from datetime import datetime
 from xml.etree import ElementTree
 
 def load_config(config_path: Path = Path("Amissense/config.json")) -> dict:
@@ -32,6 +33,23 @@ def ensure_directory_exists(directory: Path):
     directory (Path): The path to the directory.
     """
     directory.mkdir(parents=True, exist_ok=True)
+
+def setup_logging(log_level=logging.INFO, log_file=None):
+    """
+    Set up logging configuration.
+
+    Parameters:
+    log_level: Logging level (default: INFO)
+    log_file: Optional file path to log to a file
+    """
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        filename=log_file,
+        filemode='a'
+    )
+    if not log_file:
+        logging.getLogger().addHandler(logging.StreamHandler())
 
 def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
     """
@@ -60,9 +78,9 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     Returns:
     str: The primary accession (UniProt ID) of the reviewed (Swiss-Prot) entry, or None if no reviewed entry is found.
     """
-    base_url = config["apis"]["uniprot"]["url"]
+    base_url = config["urls"]["uniprot_api"]
     query = f"(organism_id:{organism_id}) AND (gene:{gene_name})"
-    fields = config["apis"]["uniprot"]["fields"]
+    fields = config["urls"]["uniprot_api_fields"]
     params = {"query": query, "fields": fields, "format": "json"}
 
     try:
@@ -77,30 +95,71 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
 
     return None
 
-def download_pdb_file(pdb_id: str, output_dir: Path) -> Path:
+def generate_output_directory(base_dir: Path, gene_id: str, uniprot_id: str) -> Path:
     """
-    Download a PDB file from the RCSB PDB website using the given PDB ID and save it to the specified output directory.
+    Generate a structured output directory name based on gene ID, UniProt ID, and the current date.
 
     Parameters:
-    pdb_id (str): The PDB ID of the protein structure (e.g., "6LID").
+    base_dir (Path): The base output directory.
+    gene_id (str): The gene ID.
+    uniprot_id (str): The UniProt ID.
+
+    Returns:
+    Path: The structured output directory path.
+    """
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    output_dir = base_dir / f"{gene_id}_{uniprot_id}_{date_str}"
+    ensure_directory_exists(output_dir)
+    return output_dir
+
+def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
+    """
+    Download a PDB file for a given UniProt ID. It first tries to fetch the file from AlphaFold; if unsuccessful, 
+    it fetches it from the RCSB PDB website.
+
+    Parameters:
+    uniprot_id (str): The UniProt ID of the protein.
     output_dir (Path): The directory where the downloaded PDB file should be saved.
 
     Returns:
-    Path: The path to the downloaded PDB file, or None if the download failed.
+    Path: The path to the downloaded PDB file, or None if both downloads failed.
     """
     ensure_directory_exists(output_dir)
-    pdb_url = f"{config['apis']['pdb']['url']}/{pdb_id}.pdb"
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    alphafold_pdb_path = output_dir / f"{uniprot_id.upper()}_alphafold_{date_str}.pdb"
+
+    # Try downloading from AlphaFold
+    try:
+        if not alphafold_pdb_path.exists():
+            alphafold_api = config['urls']['alphafold_api'].format(uniprot_id=uniprot_id.upper())
+            logging.info(f"Downloading PDB file from AlphaFold API: {alphafold_api}")
+            response = requests.get(alphafold_api, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            pdb_url = data[0]["pdbUrl"]
+            pdb_response = requests.get(pdb_url)
+            pdb_response.raise_for_status()
+            alphafold_pdb_path.write_bytes(pdb_response.content)
+            logging.info(f"Download completed and saved to {alphafold_pdb_path}")
+        return alphafold_pdb_path
+    except requests.RequestException as e:
+        logging.warning(f"Failed to download from AlphaFold: {e}")
+
+    # If AlphaFold download fails, try RCSB PDB
+    pdb_id = uniprot_id[:4].upper()  # Assuming the first 4 characters represent the PDB ID
+    pdb_file_path = output_dir / f"{pdb_id}_rcsb_{date_str}.pdb"
+    pdb_url = config['urls']['pdb_download'].format(pdb_id=pdb_id)
     
     try:
+        logging.info(f"Downloading PDB file from RCSB PDB: {pdb_url}")
         response = requests.get(pdb_url)
         response.raise_for_status()
-        pdb_file_path = output_dir / f"{pdb_id}.pdb"
         with open(pdb_file_path, "wb") as file:
             file.write(response.content)
         logging.info(f"Downloaded PDB file: {pdb_file_path}")
         return pdb_file_path
     except requests.RequestException as e:
-        logging.error(f"Error downloading PDB file {pdb_id}: {e}")
+        logging.error(f"Failed to download PDB file from RCSB PDB: {e}")
         return None
 
 def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
@@ -114,7 +173,7 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
     Path: The path to the extracted TSV file.
     """
     ensure_directory_exists(tmp_dir)
-    url = config["apis"]["alphamissense"]["url"]
+    url = config["urls"]["alphamissense_predictions"]
     file_path = tmp_dir / Path(url).name
     tsv_path = file_path.with_suffix("")
 
@@ -180,7 +239,7 @@ def get_predictions_from_static_api(uniprot_id: str) -> pd.DataFrame:
     Returns:
     pd.DataFrame: A DataFrame containing the predictions for the specified UniProt ID.
     """
-    api_url = f"https://raw.githubusercontent.com/halbritter-lab/alpha-missense-scores/main/scores/json/{uniprot_id}.AlphaMissense_aa_substitutions.json"
+    api_url = f"{config['urls']['static_json_api']}{uniprot_id}.AlphaMissense_aa_substitutions.json"
     
     try:
         response = requests.get(api_url)

@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 import sys
 from Amissense.scripts.pipeline import run_pipeline
-from Amissense.scripts.utils import get_uniprot_id, download_pdb_file, download_and_extract_alphamissense_predictions, load_config
+from Amissense.scripts.utils import get_uniprot_id, download_pdb, download_and_extract_alphamissense_predictions, load_config
 from Amissense.version import __version__ as VERSION
 from Amissense.scripts.json_generator import stream_tsv_file  # Import the function from json_generator.py
 
@@ -87,7 +87,7 @@ def main():
             download_and_extract_alphamissense_predictions(args.tmp_dir)
         
         elif args.utils_command == "download-pdb":
-            download_pdb_file(args.pdb_id, args.output_dir)
+            download_pdb(args.pdb_id, args.output_dir)
         
         elif args.utils_command == "uniprot-query":
             uniprot_id = get_uniprot_id(args.gene_name, args.organism_id)

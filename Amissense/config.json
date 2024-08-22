@@ -6,24 +6,27 @@
   "directories": {
     "tmp_dir": "tmp",
     "output_dir": "out",
-    "pdb_dir": "tmp/pdb_files",
-    "json_dir": "tmp/json"
+    "pdb_dir": "out/pdb",
+    "json_dir": "tmp/json",
+    "figures_dir": "out/figures",
+    "tables_dir": "out/tables"
   },
   "urls": {
-      "uniprot_api": "https://rest.uniprot.org/uniprotkb/search",
-      "alphamissense_predictions": "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_aa_substitutions.tsv.gz",
-      "pdb_download": "https://files.rcsb.org/download/{pdb_id}.pdb",
-      "clinvar_esearch": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
-      "clinvar_esummary": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
-      "static_json_api": "https://raw.githubusercontent.com/halbritter-lab/alpha-missense-scores/main/scores/json/"
-    },
+    "uniprot_api": "https://rest.uniprot.org/uniprotkb/search",
+    "alphamissense_predictions": "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_aa_substitutions.tsv.gz",
+    "pdb_download": "https://files.rcsb.org/download/{pdb_id}.pdb",
+    "alphafold_api": "https://alphafold.ebi.ac.uk/api/prediction/{uniprot_id}",
+    "clinvar_esearch": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+    "clinvar_esummary": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+    "static_json_api": "https://raw.githubusercontent.com/halbritter-lab/alpha-missense-scores/main/scores/json/"
+  },
   "defaults": {
     "statistical_precision": 4,
     "clinvar_batch_size": 100,
     "plot_colormap": "coolwarm",
     "plot_figure_size": [30, 10],
     "heatmap_y_limits": [20, 0],
-    "scatter_marker_size": 100, 
+    "scatter_marker_size": 100,
     "scatter_figure_size": [20, 6],
     "scatter_palette": {
       "Likely pathogenic": "orangered",
