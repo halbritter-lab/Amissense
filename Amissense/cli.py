@@ -33,11 +33,12 @@ def main():
 
     # Subcommand for running the full pipeline
     parser_pipeline = subparsers.add_parser("pipeline", help="Run the full Amissense pipeline.")
-    parser_pipeline.add_argument('-u', '--uniprot-id', type=str, required=True, help="The UniProt ID of the protein.")
     parser_pipeline.add_argument('-g', '--gene-id', type=str, required=True, help="The Gene ID.")
-    parser_pipeline.add_argument('-o', '--output-dir', type=str, default=config["directories"]["output_dir"], help="Directory to store output files.")
+    parser_pipeline.add_argument('-u', '--uniprot-id', type=str, help="The UniProt ID of the protein (optional if gene-id is provided).")
+    parser_pipeline.add_argument('-o', '--output-dir', type=str, default=config["directories"]["output_dir"], help="Base directory to store output files.")
     parser_pipeline.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
     parser_pipeline.add_argument('-s', '--source', type=str, choices=['api', 'local'], default='api', help="Source for fetching AlphaMissense predictions (default: api).")
+    parser_pipeline.add_argument('-i', '--organism-id', type=int, default=9606, help="Organism ID (default: 9606 for Homo sapiens).")
     
     # Subcommand for utils
     parser_utils = subparsers.add_parser("utils", help="Utility commands like fetching predictions, downloading PDB files, and querying UniProt.")
@@ -75,7 +76,16 @@ def main():
 
     # Handle subcommands
     if args.command == "pipeline":
-        run_pipeline(args.uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb), args.source)
+        # Retrieve UniProt ID if not provided
+        uniprot_id = args.uniprot_id
+        if not uniprot_id:
+            logging.info(f"Retrieving UniProt ID for gene {args.gene_id} and organism ID {args.organism_id}")
+            uniprot_id = get_uniprot_id(args.gene_id, args.organism_id)
+            if not uniprot_id:
+                logging.error(f"Failed to retrieve UniProt ID for gene {args.gene_id}. Exiting.")
+                sys.exit(1)
+        
+        run_pipeline(uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb) if args.experimental_pdb else None, args.source)
     
     elif args.command == "utils":
         # If no utils subcommand is given, show the help for utils subcommands

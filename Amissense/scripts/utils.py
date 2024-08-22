@@ -80,16 +80,25 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
     base_url = config["urls"]["uniprot_api"]
     query = f"(organism_id:{organism_id}) AND (gene:{gene_name})"
-    fields = config["urls"]["uniprot_api_fields"]
+    fields = "accession,reviewed,id,gene_names,organism_name"
     params = {"query": query, "fields": fields, "format": "json"}
+
+    # Log the generated URL for debugging
+    logging.debug(f"Querying UniProt API with URL: {base_url}?query={params['query']}&fields={params['fields']}&format={params['format']}")
 
     try:
         response = requests.get(base_url, params=params)
         response.raise_for_status()
         data = response.json()
+
+        # Search for the "UniProtKB reviewed (Swiss-Prot)" entry
         for entry in data.get("results", []):
             if entry.get("entryType") == "UniProtKB reviewed (Swiss-Prot)":
                 return entry.get("primaryAccession")
+
+        # If no reviewed entry is found, log that and return None
+        logging.warning(f"No reviewed (Swiss-Prot) entry found for gene: {gene_name}, organism: {organism_id}")
+
     except requests.RequestException as e:
         logging.error(f"Error querying UniProt API: {e}")
 
