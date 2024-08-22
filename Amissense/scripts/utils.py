@@ -33,23 +33,6 @@ def ensure_directory_exists(directory: Path):
     """
     directory.mkdir(parents=True, exist_ok=True)
 
-def setup_logging(log_level=logging.INFO, log_file=None):
-    """
-    Set up logging configuration.
-
-    Parameters:
-    log_level: Logging level (default: INFO)
-    log_file: Optional file path to log to a file
-    """
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        filename=log_file,
-        filemode='a'
-    )
-    if not log_file:
-        logging.getLogger().addHandler(logging.StreamHandler())
-
 def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
     """
     Fetch data from a given URL and return it as a parsed dictionary.

@@ -124,9 +124,6 @@ def save_json_file(uniprot_id, variants, am_pathogenicity_values, am_class_count
 if __name__ == "__main__":
     import argparse
 
-    # Set up logging based on config
-    utils.setup_logging(log_level=config['logging']['default_level'])
-
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Generate JSON files from AlphaMissense TSV data.")
     parser.add_argument("tsv_file", type=Path, help="Path to the AlphaMissense_aa_substitutions.tsv.gz file.")

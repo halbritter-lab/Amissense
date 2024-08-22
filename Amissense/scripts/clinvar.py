@@ -9,9 +9,6 @@ import Amissense.scripts.utils as utils
 # Load configuration from config.json
 config = utils.load_config()
 
-# Setup logging configuration
-utils.setup_logging(log_level=config["logging"]["default_level"])
-
 # Dictionary to translate 3-letter amino acid codes to single-letter symbols
 AA_DICT = config['amino_acid_codes']
 
