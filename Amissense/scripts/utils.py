@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 from datetime import datetime
 from xml.etree import ElementTree
+import time
 
 def load_config(config_path: Path = None) -> dict:
     """
@@ -78,9 +79,43 @@ def setup_logging(log_level=logging.INFO, log_file=None):
     if not log_file:
         logging.getLogger().addHandler(logging.StreamHandler())
 
+def retry_request(func, *args, **kwargs):
+    """
+    Retry a function call with exponential backoff.
+
+    Parameters:
+    func (function): The function to retry.
+    *args: Positional arguments for the function.
+    **kwargs: Keyword arguments for the function.
+
+    Returns:
+    The result of the function call if successful.
+
+    Raises:
+    Exception: If the function call fails after all retries.
+    """
+    max_attempts = config["retry"]["max_attempts"]
+    backoff_factor = config["retry"]["backoff_factor"]
+    initial_delay = config["retry"]["initial_delay"]
+
+    attempt = 0
+    delay = initial_delay
+
+    while attempt < max_attempts:
+        try:
+            return func(*args, **kwargs)
+        except requests.RequestException as e:
+            attempt += 1
+            logging.warning(f"Attempt {attempt} failed: {e}. Retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay *= backoff_factor
+
+    logging.error(f"All {max_attempts} attempts failed. Unable to complete request.")
+    raise
+
 def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
     """
-    Fetch data from a given URL and return it as a parsed dictionary.
+    Fetch data from a given URL and return it as a parsed dictionary, with retry logic.
 
     Parameters:
     url (str): The URL to fetch data from.
@@ -93,22 +128,15 @@ def fetch_data_from_url(url: str, timeout: int = 5) -> dict:
     requests.RequestException: If the network request fails.
     ValueError: If the response data is not in the expected format.
     """
-    try:
+    def make_request():
         response = requests.get(url, timeout=timeout)
         response.raise_for_status()
         if response.headers['Content-Type'] == 'application/json':
             return response.json()
         else:
             return ElementTree.fromstring(response.content)
-    except requests.RequestException as e:
-        logging.error(f"Failed to fetch data from {url}: {str(e)}")
-        raise
-    except ElementTree.ParseError as e:
-        logging.error(f"Failed to parse XML from {url}: {str(e)}")
-        raise ValueError(f"Invalid XML response from {url}")
-    except json.JSONDecodeError as e:
-        logging.error(f"Failed to parse JSON from {url}: {str(e)}")
-        raise ValueError(f"Invalid JSON response from {url}")
+
+    return retry_request(make_request)
 
 def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     """
@@ -127,10 +155,13 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
     fields = "accession,reviewed,id,gene_names,organism_name"
     params = {"query": query, "fields": fields, "format": "json"}
 
-    try:
+    def make_request():
         response = requests.get(base_url, params=params)
         response.raise_for_status()
-        data = response.json()
+        return response.json()
+
+    try:
+        data = retry_request(make_request)
 
         # Search for the "UniProtKB reviewed (Swiss-Prot)" entry
         for entry in data.get("results", []):
@@ -139,7 +170,6 @@ def get_uniprot_id(gene_name: str, organism_id: int) -> str:
 
         logging.warning(f"No reviewed (Swiss-Prot) entry found for gene: {gene_name}, organism: {organism_id}")
         return None
-
     except requests.RequestException as e:
         logging.error(f"Error querying UniProt API for gene: {gene_name}, organism: {organism_id} - {str(e)}")
         return None
@@ -181,14 +211,24 @@ def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
         if not alphafold_pdb_path.exists():
             alphafold_api = config['urls']['alphafold_api'].format(uniprot_id=uniprot_id.upper())
             logging.info(f"Downloading PDB file from AlphaFold API: {alphafold_api}")
-            response = requests.get(alphafold_api, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+            
+            def make_alphafold_request():
+                response = requests.get(alphafold_api, timeout=15)
+                response.raise_for_status()
+                return response.json()
+
+            data = retry_request(make_alphafold_request)
             pdb_url = data[0]["pdbUrl"]
-            pdb_response = requests.get(pdb_url)
-            pdb_response.raise_for_status()
-            alphafold_pdb_path.write_bytes(pdb_response.content)
+
+            def download_pdb_file():
+                response = requests.get(pdb_url)
+                response.raise_for_status()
+                return response.content
+
+            pdb_data = retry_request(download_pdb_file)
+            alphafold_pdb_path.write_bytes(pdb_data)
             logging.info(f"Download completed and saved to {alphafold_pdb_path}")
+
         return alphafold_pdb_path
     except requests.RequestException as e:
         logging.warning(f"Failed to download from AlphaFold: {str(e)}")
@@ -200,10 +240,15 @@ def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
     
     try:
         logging.info(f"Downloading PDB file from RCSB PDB: {pdb_url}")
-        response = requests.get(pdb_url)
-        response.raise_for_status()
+        
+        def make_rcsb_request():
+            response = requests.get(pdb_url)
+            response.raise_for_status()
+            return response.content
+
+        pdb_data = retry_request(make_rcsb_request)
         with open(pdb_file_path, "wb") as file:
-            file.write(response.content)
+            file.write(pdb_data)
         logging.info(f"Downloaded PDB file: {pdb_file_path}")
         return pdb_file_path
     except requests.RequestException as e:
@@ -229,9 +274,14 @@ def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
         if not tsv_path.exists():
             if not file_path.exists():
                 logging.info(f"Downloading AlphaMissense predictions from {url}")
-                response = requests.get(url)
-                response.raise_for_status()
-                file_path.write_bytes(response.content)
+                
+                def make_download_request():
+                    response = requests.get(url)
+                    response.raise_for_status()
+                    return response.content
+
+                file_data = retry_request(make_download_request)
+                file_path.write_bytes(file_data)
                 logging.info("Download completed!")
         
             logging.info("Extracting predictions")
@@ -308,10 +358,13 @@ def get_predictions_from_static_api(uniprot_id: str) -> pd.DataFrame:
     """
     api_url = f"{config['urls']['static_json_api']}{uniprot_id}.AlphaMissense_aa_substitutions.json"
     
-    try:
+    def make_request():
         response = requests.get(api_url)
         response.raise_for_status()
-        data = response.json()
+        return response.json()
+
+    try:
+        data = retry_request(make_request)
 
         predictions = [
             {

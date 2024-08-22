@@ -26,11 +26,15 @@ def fetch_summary_ids(gene_id):
     Returns:
     list: List of summary IDs.
     """
-    try:
-        url = f"{config['urls']['clinvar_esearch']}?db=clinvar&term={gene_id}[gene]&retmax=500"
+    url = f"{config['urls']['clinvar_esearch']}?db=clinvar&term={gene_id}[gene]&retmax=500"
+
+    def make_request():
         response = requests.get(url, timeout=5)
         response.raise_for_status()
+        return response
 
+    try:
+        response = utils.retry_request(make_request)
         root = ElementTree.fromstring(response.content)
         id_list = root.find("IdList")
         return [id_elem.text for id_elem in id_list.findall("Id")]
@@ -48,11 +52,16 @@ def fetch_summaries(id_batch):
     Returns:
     dict: JSON response from the E-Utilities API.
     """
-    try:
-        ids = ",".join(id_batch)
-        url = f"{config['urls']['clinvar_esummary']}?db=clinvar&id={ids}&retmode=json"
+    ids = ",".join(id_batch)
+    url = f"{config['urls']['clinvar_esummary']}?db=clinvar&id={ids}&retmode=json"
+
+    def make_request():
         response = requests.get(url, timeout=10)
         response.raise_for_status()
+        return response
+
+    try:
+        response = utils.retry_request(make_request)
         return response.json()
     except requests.RequestException as e:
         logging.error(f"Failed to fetch summaries for IDs {id_batch}: {e}")
@@ -121,7 +130,7 @@ def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
     try:
         ids = fetch_summary_ids(gene_id)
         logging.info(f"Found {len(ids)} IDs.")
-    except requests.HTTPError as e:
+    except requests.RequestException as e:
         logging.error(f"Error fetching ClinVar IDs for {gene_id}: {e}")
         return pd.DataFrame()  # Return an empty DataFrame on failure
 
@@ -131,7 +140,7 @@ def fetch_clinvar_data(gene_id: str, batch_size=None) -> pd.DataFrame:
             time.sleep(1)  # Don't overwhelm ClinVar API
             summaries = fetch_summaries(ids[index: index + batch_size])
             processed_summaries.extend(process_summaries(summaries))
-        except requests.HTTPError as e:
+        except requests.RequestException as e:
             logging.error(f"Error fetching summaries for IDs {ids[index: index + batch_size]}: {e}")
 
     output_df = pd.DataFrame(processed_summaries)
