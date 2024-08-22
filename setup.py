@@ -19,6 +19,7 @@ setup(
         "seaborn>=0.12.0",
         "matplotlib>=3.6.0",
         "plotly>=5.11.0",
+        "kaleido>=0.2.1",
     ],
     entry_points={
         "console_scripts": [
