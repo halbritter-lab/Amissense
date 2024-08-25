@@ -121,13 +121,13 @@ def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_p
         logging.info("Generating PDB with pathogenicity values")
         parser = PDBParser()
         structure = parser.get_structure("protein", str(pdb_path))
-        for model in structure:
-            for chain in model:
-                if chain.id != chain_id:
-                    continue
-                for residue in chain:
-                    if residue.id[0] == " ":  # Check if it's a standard amino acid
-                        residue.bfactor = positional_means[residue.id[1]]
+        atom_list = structure.get_atoms()
+        for atom in atom_list:
+            if atom.full_id[2] != chain_id:
+                continue
+            if atom.full_id[3][0] != " ":
+                continue
+            atom.set_bfactor(positional_means[atom.full_id[3][1]])
 
         # Save new PDB file
         output_pdb_path = out_dir / f"{uniprot_id.upper()}_pathogenicity.pdb"
