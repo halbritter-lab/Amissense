@@ -92,12 +92,18 @@ amissense generate-json /path/to/AlphaMissense_aa_substitutions.tsv.gz /path/to/
 
 ## Output
 
-The script generates several output files in the specified output directory:
+The script generates several output files in the specified output directory `{GENE_ID}_{UNIPROT_ID}_{YYYY-MM-DD}`:
 
+_Figures_
 - `{UNIPROT_ID}_heatmap.png`: Heatmap of the AlphaMissense pathogenicity scores for each amino acid substitution
 - `{UNIPROT_ID}_line_graph.png`: Line graph showing the AlphaMissense mean pathogenicity, AlphaFold per-residue model confidence score (pLDDT), and secondary structure annotations
-- `{UNIPROT_ID}_pathogenicity.pdb`: PDB file with pathogenicity scores within the B-factor
-- `{UNIPROT_ID}_AM_pathogenicity_predictions.csv`: CSV file containing the AlphaMissense predictions
-- `{GENE_ID}_clinvar_AM.csv`: CSV file with ClinVar and AlphaMissense data combined
 - `{GENE_ID}_avgAM_clinvar.png`: Line graph showing the AlphaMissense mean pathogenicity and extracted ClinVar missense variants with their classification
 - `{GENE_ID}_sankey_diagram.png`: Sankey diagram depicting the flow quantity between the AlphaMissense variant pathogenicity classification and the ClinVar variant classifications
+
+_PDB_
+- `{UNIPROT_ID}_alphafold_{YYYY-MM-DD}.pdb`: Unaltered PDB file from AlphaFold
+- `{UNIPROT_ID}_pathogenicity.pdb`: PDB file with pathogenicity scores replacing the B-factor
+
+_Tables_
+- `{UNIPROT_ID}_AM_pathogenicity_predictions_{YYYY-MM-DD}.csv`: CSV file containing the AlphaMissense predictions
+- `{GENE_ID}_clinvar_AM_{YYYY-MM-DD}.csv`: CSV file with ClinVar and AlphaMissense data combined
