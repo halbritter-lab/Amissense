@@ -17,6 +17,59 @@ matplotlib.use('Agg')  # Use a non-interactive backend
 # Load configuration from config.json
 config = utils.load_config()
 
+def plot_AMcat_ClinVarcat_bubble(gene_id: str, clinvar_missense_data: pd.DataFrame, out_dir: Path):
+    clinvar_missense_data["clinvar_classification_mapped"] = clinvar_missense_data["ClinVar classification"].map(
+        config["clinvar_classification_mapping"]
+    )
+
+    frequency = (
+        clinvar_missense_data.groupby(["clinvar_classification_mapped", "AM classification"])
+        .size()
+        .reset_index(name="count")
+    )
+
+    # Axis sort order
+    AM_order = ["benign", "ambiguous", "pathogenic"]
+    ClinVar_order = [
+        "Likely pathogenic",
+        "Uncertain significance",
+        "Likely benign",
+        "Conflicting significance",
+    ]
+
+    # Convert the columns to Categorical type with the custom orders
+    frequency["clinvar_classification_mapped"] = pd.Categorical(
+        frequency["clinvar_classification_mapped"], categories=ClinVar_order, ordered=True
+    )
+    frequency["AM classification"] = pd.Categorical(frequency["AM classification"], categories=AM_order, ordered=True)
+
+    # Sort the DataFrame
+    frequency_sorted = frequency.sort_values(["clinvar_classification_mapped", "AM classification"])
+
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(
+        data=frequency_sorted,
+        x="clinvar_classification_mapped",
+        y="AM classification",
+        size="count",
+        legend=False,
+        sizes=(250, 2500),
+    )
+
+    plt.xlim(-0.5, len(frequency_sorted["clinvar_classification_mapped"].unique()) - 0.5)
+    plt.ylim(-0.5, len(frequency_sorted["AM classification"].unique()) - 0.5)
+
+    # General plot settings
+    plt.title("AlphaMissense Predicted Pathogenicity with ClinVar Pathogenicity Classification")
+    plt.xlabel("Residue Sequence Number")
+    plt.ylabel("AlphaMissense Predicted Pathogenicity")
+
+    bubble_plt = out_dir / f"{gene_id}_AMcat_ClinVarcat_bubble.png"
+    plt.savefig(bubble_plt, format="png", bbox_inches="tight")
+    logging.info(f"ClinVar graph stored at {bubble_plt}")
+    plt.close()
+
+
 def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir: Path):
     logging.info("Generating heatmap graph...")
 
@@ -46,7 +99,7 @@ def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir
     ax1.set_ylim(config['defaults']['heatmap_y_limits'])  # Use configurable Y-axis limits
     ax1.set_xlabel("Residue Sequence Number")
     ax1.set_ylabel("Alternate Amino Acid")
-    ax1.set_title("Pathogenicity Heatmap")
+    ax1.set_title(f"{uniprot_id} Pathogenicity Heatmap")
 
     # Add colorbar
     fig1.colorbar(heatmap, ax=ax1, shrink=0.6, label="AM Pathogenicity")
@@ -122,7 +175,7 @@ def plot_predictions_line_graph(
         ax1.legend(lines + lines2, labels + labels2, loc="upper left")
     else:
         ax1.legend(lines, labels, loc="upper left")
-    ax1.set_title("Mean Pathogenicity, AlphaFold Confidence, and Secondary Structures")
+    ax1.set_title(f"Mean Pathogenicity, AlphaFold Confidence, and Secondary Structures of {uniprot_id}")
 
     # Save line graph image
     line_graph_path = out_dir / f"{uniprot_id}_line_graph.png"
@@ -163,8 +216,8 @@ def plot_clinvar_scatter(
     )
 
     # General plot settings
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0.0)
-    plt.title("AlphaMissense Predicted Pathogenicity with ClinVar Pathogenicity Classification")
+    plt.legend(bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0.0)
+    plt.title(f"{gene_id} AlphaMissense Predicted Pathogenicity with ClinVar Pathogenicity Classification")
     plt.xlabel("Residue Sequence Number")
     plt.ylabel("AlphaMissense Predicted Pathogenicity")
 
