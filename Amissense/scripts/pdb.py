@@ -26,6 +26,9 @@ logging.basicConfig(
 # Suppress specific PDBConstructionWarning
 warnings.simplefilter('ignore', PDBConstructionWarning)
 
+# Load Chimera color ranges from config.json
+chimera_color_ranges = config.get("chimera_color_ranges", {})
+
 def extract_chain_id(uniprot_id: str, pdb_path: Path) -> str:
     """Fetches the chain ID for a given UniProt ID from the PDB file"""
     try:
@@ -105,6 +108,63 @@ def extract_positional_confidences(chain_id: str, pdb_path: Path) -> np.ndarray:
     except Exception as e:
         logging.error(f"Unexpected error in extracting positional confidences: {e}")
         raise
+
+def generate_chimera_session(uniprot_id: str, predictions_grouped_means: pd.Series, pdb_path: Path, out_dir: Path):
+    """
+    Generate a Chimera session script that colors residues based on pathogenicity values.
+
+    Parameters:
+    - uniprot_id: The UniProt ID of the protein.
+    - predictions_grouped_means: A pandas Series where the index is the residue number, and the value is the pathogenicity score.
+    - pdb_path: The path to the PDB file to load in Chimera.
+    - out_dir: The directory where the Chimera session script will be saved.
+    """
+    try:
+        # Create the output directory if it doesn't exist
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Path to save the Chimera session script
+        script_path = out_dir / f"{uniprot_id}_chimera_session.py"
+
+        # Determine if we need to use a relative path for the PDB file
+        pdb_relative_path = pdb_path.relative_to(out_dir) if pdb_path.parent == out_dir else pdb_path
+
+        # Open the script file for writing
+        with open(script_path, "w") as script_file:
+            # Chimera script header
+            script_file.write("# Chimera script to color residues based on pathogenicity values\n")
+            script_file.write("import chimera\n")
+            script_file.write("from chimera import runCommand\n")
+            
+            # Load the PDB file
+            script_file.write(f"runCommand('open {pdb_relative_path}')\n")
+            
+            # Iterate over predictions and generate Chimera commands for coloring
+            for residue_pos, pathogenicity in predictions_grouped_means.items():
+                # Determine the color based on the score ranges defined in the config
+                color = get_color_from_config(pathogenicity)
+                script_file.write(f"runCommand('color {color} :{residue_pos}')\n")
+
+            # Save the session (use only the filename, not the full path)
+            session_filename = f"{uniprot_id}_pathogenicity_session.py"
+            script_file.write(f"runCommand('save {session_filename}')\n")
+
+        logging.info(f"Chimera session script saved at {script_path}")
+
+    except Exception as e:
+        logging.error(f"Error generating Chimera session: {e}")
+        raise
+
+def get_color_from_config(score):
+    """
+    Map a pathogenicity score to a color using the chimera_color_ranges in config.json.
+    """
+    for range_key, color in chimera_color_ranges.items():
+        low, high = map(float, range_key.split("-"))
+        if low <= score <= high:
+            return color
+    logging.warning(f"No color found for score {score}, using default 'gray'.")
+    return "gray"
 
 def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_path: Path, out_dir: Path):
     """Generate a PDB file with pathogenicity values."""

@@ -9,6 +9,7 @@ import Amissense.scripts.pdb as pdb_module
 import Amissense.scripts.graphs as graphs_module
 import Amissense.scripts.clinvar as clinvar_module
 import Amissense.scripts.utils as utils
+from Amissense.scripts.pdb import generate_chimera_session
 
 # Load configuration with error handling
 try:
@@ -50,18 +51,38 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
         predictions_file = tables_dir / f"{gene_id}_{uniprot_id}_AM_pathogenicity_predictions_{date_str}.csv"
         predictions.to_csv(predictions_file, index=False)
 
-        # Use experimental PDB if provided, otherwise download from AlphaFold
-        pdb_path = experimental_pdb if experimental_pdb else utils.download_pdb(uniprot_id, pdb_dir)
+        # Check for experimental PDB or download from AlphaFold/RCSB
+        if experimental_pdb and not experimental_pdb.exists():
+            # Extract PDB ID from the provided experimental PDB file path name (assumes filename contains PDB ID)
+            pdb_id = experimental_pdb.stem[:4]  # Adjust based on actual naming convention
+            logging.warning(f"Experimental PDB file not found. Attempting to download PDB ID: {pdb_id}")
+            pdb_path = utils.download_pdb(uniprot_id, pdb_dir, pdb_id=pdb_id)
+        elif experimental_pdb and experimental_pdb.exists():
+            pdb_path = experimental_pdb
+        else:
+            pdb_path = utils.download_pdb(uniprot_id, pdb_dir)
+
+        if not pdb_path:
+            logging.error("Failed to obtain PDB file. Pipeline cannot proceed.")
+            return
+
+        # Copy the original PDB file to the output directory
+        original_pdb_path = pdb_dir / f"{uniprot_id.upper()}_original.pdb"
+        pdb_path.rename(original_pdb_path)
 
         # Extract PDB details
-        chain_id = pdb_module.extract_chain_id(uniprot_id, pdb_path)
-        helices, sheets = pdb_module.extract_secondary_structures(chain_id, pdb_path)
-        pdb_confidences = pdb_module.extract_positional_confidences(chain_id, pdb_path) if not experimental_pdb else None
+        chain_id = pdb_module.extract_chain_id(uniprot_id, original_pdb_path)
+        helices, sheets = pdb_module.extract_secondary_structures(chain_id, original_pdb_path)
+        pdb_confidences = pdb_module.extract_positional_confidences(chain_id, original_pdb_path) if not experimental_pdb else None
 
         # Generate PDB with pathogenicity and create visualizations
-        pdb_module.generate_pathogenicity_pdb(uniprot_id, predictions, pdb_path, pdb_dir)
+        pdb_module.generate_pathogenicity_pdb(uniprot_id, predictions, original_pdb_path, pdb_dir)
         graphs_module.plot_predictions_heatmap(uniprot_id, predictions, figures_dir)
         graphs_module.plot_predictions_line_graph(uniprot_id, predictions, figures_dir, helices, sheets, pdb_confidences)
+
+        # Generate Chimera session
+        predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
+        generate_chimera_session(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir)
 
         # Fetch and merge ClinVar data, then create visualizations
         clinvar_data = clinvar_module.fetch_clinvar_data(gene_id)

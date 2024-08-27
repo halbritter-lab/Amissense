@@ -73,6 +73,13 @@
     "Uncertain significance": "Uncertain significance",
     "Conflicting classifications of pathogenicity": "Conflicting significance"
   },
+  "chimera_color_ranges": {
+    "0.0-0.2": "blue",
+    "0.2-0.4": "cyan",
+    "0.4-0.6": "yellow",
+    "0.6-0.8": "orange",
+    "0.8-1.0": "red"
+  },
   "retry": {
     "max_attempts": 5,
     "backoff_factor": 2,

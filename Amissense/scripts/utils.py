@@ -191,13 +191,15 @@ def generate_output_directory(base_dir: Path, gene_id: str, uniprot_id: str) -> 
     ensure_directory_exists(output_dir)
     return output_dir
 
-def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
+def download_pdb(uniprot_id: str, output_dir: Path, pdb_id: str = None) -> Path:
     """
-    Download a PDB file for a given UniProt ID. It first tries to fetch the file from AlphaFold; if unsuccessful, 
-    it fetches it from the RCSB PDB website.
+    Download a PDB file for a given UniProt ID or PDB ID. 
+    It tries to fetch the file from AlphaFold if no PDB ID is provided. 
+    If unsuccessful, it fetches from the RCSB PDB website.
 
     Parameters:
     uniprot_id (str): The UniProt ID of the protein.
+    pdb_id (str): The PDB ID of the structure, if known.
     output_dir (Path): The directory where the downloaded PDB file should be saved.
 
     Returns:
@@ -205,8 +207,31 @@ def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
     """
     ensure_directory_exists(output_dir)
     date_str = datetime.now().strftime("%Y-%m-%d")
-    alphafold_pdb_path = output_dir / f"{uniprot_id.upper()}_alphafold_{date_str}.pdb"
 
+    # If a PDB ID is provided, download from RCSB PDB
+    if pdb_id:
+        pdb_file_path = output_dir / f"{pdb_id}_rcsb_{date_str}.pdb"
+        pdb_url = config['urls']['pdb_download'].format(pdb_id=pdb_id.upper())
+        
+        try:
+            logging.info(f"Downloading PDB file from RCSB PDB: {pdb_url}")
+            
+            def make_rcsb_request():
+                response = requests.get(pdb_url)
+                response.raise_for_status()
+                return response.content
+
+            pdb_data = retry_request(make_rcsb_request)
+            with open(pdb_file_path, "wb") as file:
+                file.write(pdb_data)
+            logging.info(f"Downloaded PDB file: {pdb_file_path}")
+            return pdb_file_path
+        except requests.RequestException as e:
+            logging.error(f"Failed to download PDB file from RCSB PDB: {str(e)}")
+            return None
+
+    # Otherwise, try to download from AlphaFold
+    alphafold_pdb_path = output_dir / f"{uniprot_id.upper()}_alphafold_{date_str}.pdb"
     try:
         if not alphafold_pdb_path.exists():
             alphafold_api = config['urls']['alphafold_api'].format(uniprot_id=uniprot_id.upper())
@@ -232,27 +257,6 @@ def download_pdb(uniprot_id: str, output_dir: Path) -> Path:
         return alphafold_pdb_path
     except requests.RequestException as e:
         logging.warning(f"Failed to download from AlphaFold: {str(e)}")
-
-    # If AlphaFold download fails, try RCSB PDB
-    pdb_id = uniprot_id[:4].upper()  # Assuming the first 4 characters represent the PDB ID
-    pdb_file_path = output_dir / f"{pdb_id}_rcsb_{date_str}.pdb"
-    pdb_url = config['urls']['pdb_download'].format(pdb_id=pdb_id)
-    
-    try:
-        logging.info(f"Downloading PDB file from RCSB PDB: {pdb_url}")
-        
-        def make_rcsb_request():
-            response = requests.get(pdb_url)
-            response.raise_for_status()
-            return response.content
-
-        pdb_data = retry_request(make_rcsb_request)
-        with open(pdb_file_path, "wb") as file:
-            file.write(pdb_data)
-        logging.info(f"Downloaded PDB file: {pdb_file_path}")
-        return pdb_file_path
-    except requests.RequestException as e:
-        logging.error(f"Failed to download PDB file from RCSB PDB: {str(e)}")
         return None
 
 def download_and_extract_alphamissense_predictions(tmp_dir: Path) -> Path:
