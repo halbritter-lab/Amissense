@@ -80,6 +80,7 @@
     "0.6-0.8": "orange",
     "0.8-1.0": "red"
   },
+  "clinvar_sphere_color": "cyan",
   "retry": {
     "max_attempts": 5,
     "backoff_factor": 2,

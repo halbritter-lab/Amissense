@@ -19,7 +19,7 @@ except SystemExit:
     logging.critical("Unable to load configuration. Exiting.")
     raise
 
-def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimental_pdb: Path = None, source: str = 'api'):
+def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimental_pdb: Path = None, source: str = 'api', include_clinvar_variants_in_pdb: bool = False):
     """Main function to run the pipeline."""
     
     # Ensure the base directory exists
@@ -54,8 +54,7 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
 
         # Check for experimental PDB or download from AlphaFold/RCSB
         if experimental_pdb and not experimental_pdb.exists():
-            # Extract PDB ID from the provided experimental PDB file path name (assumes filename contains PDB ID)
-            pdb_id = experimental_pdb.stem[:4]  # Adjust based on actual naming convention
+            pdb_id = experimental_pdb.stem[:4]  # Extract PDB ID
             logging.warning(f"Experimental PDB file not found. Attempting to download PDB ID: {pdb_id}")
             pdb_path = utils.download_pdb(uniprot_id, pdb_dir, pdb_id=pdb_id)
         elif experimental_pdb and experimental_pdb.exists():
@@ -81,12 +80,6 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
         graphs_module.plot_predictions_heatmap(uniprot_id, predictions, figures_dir)
         graphs_module.plot_predictions_line_graph(uniprot_id, predictions, figures_dir, helices, sheets, pdb_confidences)
 
-        # Generate Chimera session
-        predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
-        generate_chimera_session(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir)
-        generate_pymol_script(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir)
-
-
         # Fetch and merge ClinVar data, then create visualizations
         clinvar_data = clinvar_module.fetch_clinvar_data(gene_id)
         clinvar_merged_data = clinvar_module.merge_missense_data(clinvar_data, predictions)
@@ -96,6 +89,14 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
 
         graphs_module.plot_clinvar_scatter(gene_id, predictions, clinvar_merged_data, figures_dir)
         graphs_module.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, figures_dir)
+
+        # Generate Chimera and PyMOL sessions
+        predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
+        
+        clinvar_variants = clinvar_merged_data["Amino acid change - location"] if include_clinvar_variants_in_pdb else None
+
+        generate_chimera_session(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir, clinvar_variants=clinvar_variants)
+        generate_pymol_script(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir, clinvar_variants=clinvar_variants)
 
     except requests.RequestException as e:
         logging.error(f"Network-related error: {e}")
@@ -110,11 +111,14 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the AlphaMissense data processing pipeline.")
-    parser.add_argument('-u', '--uniprot-id', type=str, required=True, help="The UniProt ID of the protein.")
     parser.add_argument('-g', '--gene-id', type=str, required=True, help="The Gene ID.")
-    parser.add_argument('-o', '--output-dir', type=str, default=config['directories']['output_dir'], help="Base directory to store output files.")
-    parser.add_argument('-e', '--experimental-pdb', type=str, default=None, help="Path to experimental PDB file. If provided, this will be used instead of downloading.")
+    parser.add_argument('-u', '--uniprot-id', type=str, help="The UniProt ID of the protein (optional if gene-id is provided).")
+    parser.add_argument('-o', '--output-dir', type=str, default="out", help="Base directory to store output files.")
+    parser.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
     parser.add_argument('-s', '--source', type=str, choices=['api', 'local'], default='api', help="Source for fetching AlphaMissense predictions (default: api).")
+    parser.add_argument('-i', '--organism-id', type=int, default=9606, help="Organism ID (default: 9606 for Homo sapiens).")
+    parser.add_argument('--include-clinvar-variants-in-pdb', action='store_true', help="Include ClinVar variants in the PDB visualizations.")
+
 
     args = parser.parse_args()
 

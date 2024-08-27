@@ -38,6 +38,7 @@ def main():
     parser_pipeline.add_argument('-e', '--experimental-pdb', type=str, default="", help="Path to experimental PDB file.")
     parser_pipeline.add_argument('-s', '--source', type=str, choices=['api', 'local'], default='api', help="Source for fetching AlphaMissense predictions (default: api).")
     parser_pipeline.add_argument('-i', '--organism-id', type=int, default=9606, help="Organism ID (default: 9606 for Homo sapiens).")
+    parser_pipeline.add_argument('--include-clinvar-variants-in-pdb', action='store_true', help="Include ClinVar variants in the PDB visualizations.")
 
     # Subcommand for utils
     parser_utils = subparsers.add_parser("utils", help="Utility commands like fetching predictions, downloading PDB files, and querying UniProt.")
@@ -87,8 +88,15 @@ def main():
                 logging.error(f"Failed to retrieve UniProt ID for gene {args.gene_id}. Exiting.")
                 sys.exit(1)
         
-        run_pipeline(uniprot_id, args.gene_id, Path(args.output_dir), Path(args.experimental_pdb) if args.experimental_pdb else None, args.source)
-    
+        run_pipeline(
+            uniprot_id, 
+            args.gene_id, 
+            Path(args.output_dir), 
+            Path(args.experimental_pdb) if args.experimental_pdb else None, 
+            args.source, 
+            include_clinvar_variants_in_pdb=args.include_clinvar_variants_in_pdb
+        )
+
     elif args.command == "utils":
         # If no utils subcommand is given, show the help for utils subcommands
         if args.utils_command is None:

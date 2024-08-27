@@ -111,14 +111,7 @@ def extract_positional_confidences(chain_id: str, pdb_path: Path) -> np.ndarray:
 
 def generate_pymol_script(uniprot_id: str, predictions_grouped_means: pd.Series, pdb_path: Path, out_dir: Path, clinvar_variants: pd.Series = None):
     """
-    Generate a PyMOL script that colors residues based on pathogenicity values and optionally shows ClinVar variants as spheres.
-
-    Parameters:
-    - uniprot_id: The UniProt ID of the protein.
-    - predictions_grouped_means: A pandas Series where the index is the residue number, and the value is the pathogenicity score.
-    - pdb_path: The path to the PDB file to load in PyMOL.
-    - out_dir: The directory where the PyMOL script will be saved.
-    - clinvar_variants: Optional pandas Series where the index is the residue number, and the value indicates a ClinVar variant.
+    Generate a PyMOL script that colors residues based on pathogenicity values and shows ClinVar variants as spheres.
     """
     try:
         # Create the output directory if it doesn't exist
@@ -133,7 +126,7 @@ def generate_pymol_script(uniprot_id: str, predictions_grouped_means: pd.Series,
         # Open the script file for writing
         with open(script_path, "w") as script_file:
             # PyMOL script header
-            script_file.write("# PyMOL script to color residues based on pathogenicity values\n")
+            script_file.write("# PyMOL script to color residues based on pathogenicity values and show ClinVar variants as spheres\n")
             script_file.write("from pymol import cmd\n")
             
             # Load the PDB file
@@ -141,15 +134,15 @@ def generate_pymol_script(uniprot_id: str, predictions_grouped_means: pd.Series,
             
             # Iterate over predictions and generate PyMOL commands for coloring
             for residue_pos, pathogenicity in predictions_grouped_means.items():
-                color = get_color_from_config(pathogenicity)  # Assume this function is defined elsewhere
+                color = get_color_from_config(pathogenicity)
                 script_file.write(f"cmd.color('{color}', 'resi {residue_pos}')\n")
 
             # Optionally show ClinVar variants as spheres
             if clinvar_variants is not None:
-                for residue_pos in clinvar_variants.index:
+                for residue_pos, score in clinvar_variants.items():
                     script_file.write(f"cmd.show('spheres', 'resi {residue_pos}')\n")
 
-            # Save the session (use only the filename, not the full path)
+            # Save the session
             session_filename = f"{uniprot_id}_pathogenicity_session.pse"
             script_file.write(f"cmd.save('{session_filename}')\n")
 
@@ -159,15 +152,16 @@ def generate_pymol_script(uniprot_id: str, predictions_grouped_means: pd.Series,
         logging.error(f"Error generating PyMOL script: {e}")
         raise
 
-def generate_chimera_session(uniprot_id: str, predictions_grouped_means: pd.Series, pdb_path: Path, out_dir: Path):
+def generate_chimera_session(uniprot_id: str, predictions_grouped_means: pd.Series, pdb_path: Path, out_dir: Path, clinvar_variants: pd.Series = None):
     """
-    Generate a Chimera session script that colors residues based on pathogenicity values.
+    Generate a Chimera session script that colors residues based on pathogenicity values and shows ClinVar variants as spheres.
 
     Parameters:
     - uniprot_id: The UniProt ID of the protein.
     - predictions_grouped_means: A pandas Series where the index is the residue number, and the value is the pathogenicity score.
     - pdb_path: The path to the PDB file to load in Chimera.
     - out_dir: The directory where the Chimera session script will be saved.
+    - clinvar_variants: Optional pandas Series where the index is the residue number, and the value indicates the pathogenicity score for ClinVar variants.
     """
     try:
         # Create the output directory if it doesn't exist
@@ -182,7 +176,7 @@ def generate_chimera_session(uniprot_id: str, predictions_grouped_means: pd.Seri
         # Open the script file for writing
         with open(script_path, "w") as script_file:
             # Chimera script header
-            script_file.write("# Chimera script to color residues based on pathogenicity values\n")
+            script_file.write("# Chimera script to color residues based on pathogenicity values and show ClinVar variants as spheres\n")
             script_file.write("import chimera\n")
             script_file.write("from chimera import runCommand\n")
             
@@ -194,6 +188,13 @@ def generate_chimera_session(uniprot_id: str, predictions_grouped_means: pd.Seri
                 # Determine the color based on the score ranges defined in the config
                 color = get_color_from_config(pathogenicity)
                 script_file.write(f"runCommand('color {color} :{residue_pos}')\n")
+
+            # Optionally show ClinVar variants as spheres
+            if clinvar_variants is not None:
+                for residue_pos, score in clinvar_variants.items():
+                    # Ensure the residue is displayed and then represented as a sphere
+                    script_file.write(f"runCommand('display :{residue_pos}')\n")
+                    script_file.write(f"runCommand('represent sphere :{residue_pos}')\n")
 
             # Save the session (use only the filename, not the full path)
             session_filename = f"{uniprot_id}_pathogenicity_session.py"
@@ -213,7 +214,7 @@ def get_color_from_config(score):
         low, high = map(float, range_key.split("-"))
         if low <= score <= high:
             return color
-    logging.warning(f"No color found for score {score}, using default 'gray'.")
+    logging.warning(f"No color found for score {score}. Please check the configured ranges in config.json. Using default 'gray'.")
     return "gray"
 
 def generate_pathogenicity_pdb(uniprot_id: str, predictions: pd.DataFrame, pdb_path: Path, out_dir: Path):
