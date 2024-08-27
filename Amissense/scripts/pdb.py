@@ -109,6 +109,56 @@ def extract_positional_confidences(chain_id: str, pdb_path: Path) -> np.ndarray:
         logging.error(f"Unexpected error in extracting positional confidences: {e}")
         raise
 
+def generate_pymol_script(uniprot_id: str, predictions_grouped_means: pd.Series, pdb_path: Path, out_dir: Path, clinvar_variants: pd.Series = None):
+    """
+    Generate a PyMOL script that colors residues based on pathogenicity values and optionally shows ClinVar variants as spheres.
+
+    Parameters:
+    - uniprot_id: The UniProt ID of the protein.
+    - predictions_grouped_means: A pandas Series where the index is the residue number, and the value is the pathogenicity score.
+    - pdb_path: The path to the PDB file to load in PyMOL.
+    - out_dir: The directory where the PyMOL script will be saved.
+    - clinvar_variants: Optional pandas Series where the index is the residue number, and the value indicates a ClinVar variant.
+    """
+    try:
+        # Create the output directory if it doesn't exist
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Path to save the PyMOL script
+        script_path = out_dir / f"{uniprot_id}_pymol_script.pml"
+
+        # Determine if we need to use a relative path for the PDB file
+        pdb_relative_path = pdb_path.relative_to(out_dir) if pdb_path.parent == out_dir else pdb_path
+
+        # Open the script file for writing
+        with open(script_path, "w") as script_file:
+            # PyMOL script header
+            script_file.write("# PyMOL script to color residues based on pathogenicity values\n")
+            script_file.write("from pymol import cmd\n")
+            
+            # Load the PDB file
+            script_file.write(f"cmd.load('{pdb_relative_path}')\n")
+            
+            # Iterate over predictions and generate PyMOL commands for coloring
+            for residue_pos, pathogenicity in predictions_grouped_means.items():
+                color = get_color_from_config(pathogenicity)  # Assume this function is defined elsewhere
+                script_file.write(f"cmd.color('{color}', 'resi {residue_pos}')\n")
+
+            # Optionally show ClinVar variants as spheres
+            if clinvar_variants is not None:
+                for residue_pos in clinvar_variants.index:
+                    script_file.write(f"cmd.show('spheres', 'resi {residue_pos}')\n")
+
+            # Save the session (use only the filename, not the full path)
+            session_filename = f"{uniprot_id}_pathogenicity_session.pse"
+            script_file.write(f"cmd.save('{session_filename}')\n")
+
+        logging.info(f"PyMOL script saved at {script_path}")
+
+    except Exception as e:
+        logging.error(f"Error generating PyMOL script: {e}")
+        raise
+
 def generate_chimera_session(uniprot_id: str, predictions_grouped_means: pd.Series, pdb_path: Path, out_dir: Path):
     """
     Generate a Chimera session script that colors residues based on pathogenicity values.

@@ -10,6 +10,7 @@ import Amissense.scripts.graphs as graphs_module
 import Amissense.scripts.clinvar as clinvar_module
 import Amissense.scripts.utils as utils
 from Amissense.scripts.pdb import generate_chimera_session
+from Amissense.scripts.pdb import generate_pymol_script
 
 # Load configuration with error handling
 try:
@@ -83,6 +84,8 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
         # Generate Chimera session
         predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()
         generate_chimera_session(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir)
+        generate_pymol_script(uniprot_id, predictions_grouped_means, original_pdb_path, pdb_dir)
+
 
         # Fetch and merge ClinVar data, then create visualizations
         clinvar_data = clinvar_module.fetch_clinvar_data(gene_id)
