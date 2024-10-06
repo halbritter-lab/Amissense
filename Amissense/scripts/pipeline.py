@@ -47,10 +47,6 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
         else:
             json_dir = Path(config['directories']['json_dir'])
             predictions = utils.get_predictions_from_json_for_uniprot_id(uniprot_id, json_dir)
-        
-        # Save predictions to the tables directory with date
-        predictions_file = tables_dir / f"{gene_id}_{uniprot_id}_AM_pathogenicity_predictions_{date_str}.csv"
-        predictions.to_csv(predictions_file, index=False)
 
         # Check for experimental PDB or download from AlphaFold/RCSB
         if experimental_pdb and not experimental_pdb.exists():
@@ -74,21 +70,27 @@ def run_pipeline(uniprot_id: str, gene_id: str, base_output_dir: Path, experimen
         chain_id = pdb_module.extract_chain_id(uniprot_id, original_pdb_path)
         helices, sheets = pdb_module.extract_secondary_structures(chain_id, original_pdb_path)
         pdb_confidences = pdb_module.extract_positional_confidences(chain_id, original_pdb_path) if not experimental_pdb else None
+        predictions = utils.add_secondary_structures(predictions, helices, sheets)
+
+        # Save predictions to the tables directory with date
+        predictions_file = tables_dir / f"{gene_id}_{uniprot_id}_AM_pathogenicity_predictions_{date_str}.csv"
+        predictions.to_csv(predictions_file, index=False)
 
         # Generate PDB with pathogenicity and create visualizations
         pdb_module.generate_pathogenicity_pdb(uniprot_id, predictions, original_pdb_path, pdb_dir)
         graphs_module.plot_predictions_heatmap(uniprot_id, predictions, figures_dir)
-        graphs_module.plot_predictions_line_graph(uniprot_id, predictions, figures_dir, helices, sheets, pdb_confidences)
+        graphs_module.plot_predictions_line_graph(uniprot_id, predictions, figures_dir, pdb_confidences)
 
         # Fetch and merge ClinVar data, then create visualizations
         clinvar_data = clinvar_module.fetch_clinvar_data(gene_id)
         clinvar_merged_data = clinvar_module.merge_missense_data(clinvar_data, predictions)
+        clinvar_module.log_statistics(clinvar_merged_data)
         
         clinvar_file = tables_dir / f"{gene_id}_{uniprot_id}_clinvar_AM_{date_str}.csv"
         clinvar_merged_data.to_csv(clinvar_file, index=False)
 
         graphs_module.plot_clinvar_scatter(gene_id, predictions, clinvar_merged_data, figures_dir)
-        graphs_module.plot_clinvar_sankey(gene_id, predictions, clinvar_merged_data, figures_dir)
+        graphs_module.plot_clinvar_sankey(gene_id, clinvar_merged_data, figures_dir)
 
         # Generate Chimera and PyMOL sessions
         predictions_grouped_means = predictions.groupby("protein_variant_pos")["pathogenicity"].mean()

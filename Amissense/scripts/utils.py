@@ -1,4 +1,6 @@
 import os
+
+import numpy as np
 import requests
 import gzip
 import shutil
@@ -429,3 +431,28 @@ def get_predictions_from_am_tsv_for_uniprot_id(uniprot_id: str, missense_tsv: Pa
     except (FileNotFoundError, KeyError) as e:
         logging.error(str(e))
         raise
+
+def add_secondary_structures(predictions: pd.DataFrame, helices: np.ndarray, sheets: np.ndarray) -> pd.DataFrame:
+    # Ensure the 'Amino acid change - location' column exists
+    if 'protein_variant_pos' not in predictions.columns:
+        raise ValueError("The dataframe must contain an 'protein_variant_pos' column")
+
+    # Convert location to integer and subtract 1 to use as 0-based index
+    locations = predictions['protein_variant_pos'].astype(int)
+
+    # Initialize the new column with None values
+    predictions['secondary_structure'] = None
+
+    # Set Helix values
+    helix_mask = np.array(helices)[locations] == 1
+    predictions.loc[helix_mask, 'secondary_structure'] = 'helix'
+
+    # Set Sheet values (only where not already set to Helix)
+    sheet_mask = (np.array(sheets)[locations] == 1) & (predictions['secondary_structure'].isnull())
+    predictions.loc[sheet_mask, 'secondary_structure'] = 'sheet'
+
+    # Set remaining values to undefined
+    undefined_mask = predictions['secondary_structure'].isnull()
+    predictions.loc[undefined_mask, 'secondary_structure'] = 'undefined'
+
+    return predictions

@@ -25,12 +25,11 @@
     "clinvar_batch_size": 100,
     "plot_colormap": "coolwarm",
     "plot_figure_size": [30, 10],
-    "heatmap_y_limits": [20, 0],
     "scatter_marker_size": 100,
     "scatter_figure_size": [20, 6],
     "scatter_palette": {
-      "Likely pathogenic": "orangered",
-      "Likely benign": "royalblue",
+      "(Likely) pathogenic": "red",
+      "(Likely) benign": "blue",
       "Uncertain significance": "orange",
       "Conflicting significance": "gray"
     },
@@ -64,20 +63,20 @@
     "Tyr": "Y"
   },
   "clinvar_classification_mapping": {
-    "Pathogenic": "Likely pathogenic",
-    "Pathogenic/Likely pathogenic": "Likely pathogenic",
-    "Likely pathogenic": "Likely pathogenic",
-    "Benign": "Likely benign",
-    "Benign/Likely benign": "Likely benign",
-    "Likely benign": "Likely benign",
+    "Pathogenic": "(Likely) pathogenic",
+    "Pathogenic/Likely pathogenic": "(Likely) pathogenic",
+    "Likely pathogenic": "(Likely) pathogenic",
+    "Benign": "(Likely) benign",
+    "Benign/Likely benign": "(Likely) benign",
+    "Likely benign": "(Likely) benign",
     "Uncertain significance": "Uncertain significance",
     "Conflicting classifications of pathogenicity": "Conflicting significance"
   },
   "chimera_color_ranges": {
     "0.0-0.2": "blue",
-    "0.2-0.4": "cyan",
-    "0.4-0.6": "yellow",
-    "0.6-0.8": "orange",
+    "0.2-0.4": "light cyan",
+    "0.4-0.6": "white",
+    "0.6-0.8": "lightpink",
     "0.8-1.0": "red"
   },
   "clinvar_sphere_color": "cyan",

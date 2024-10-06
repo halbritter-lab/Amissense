@@ -168,3 +168,7 @@ cython_debug/
 
 # ignore any pdb files
 *.pdb
+
+.DS_Store
+.idea/
+.python-version

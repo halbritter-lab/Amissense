@@ -11,11 +11,14 @@ import Amissense.scripts.utils as utils
 import matplotlib
 from pathlib import Path
 from typing import Optional
+from plotly.subplots import make_subplots
+
 
 matplotlib.use('Agg')  # Use a non-interactive backend
 
 # Load configuration from config.json
 config = utils.load_config()
+plt.rc('font', size=20)
 
 def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir: Path):
     logging.info("Generating heatmap graph...")
@@ -39,17 +42,18 @@ def plot_predictions_heatmap(uniprot_id: str, predictions: pd.DataFrame, out_dir
 
     colormap = config['defaults']['plot_colormap']
     heatmap = ax1.imshow(heatmap_data, aspect="auto", interpolation="none", cmap=colormap)
-    yticks = np.arange(len(unique_mutations)) + 0.5
+    yticks = np.arange(len(unique_mutations))
 
     ax1.set_yticks(yticks)
     ax1.set_yticklabels(unique_mutations)
-    ax1.set_ylim(config['defaults']['heatmap_y_limits'])  # Use configurable Y-axis limits
-    ax1.set_xlabel("Residue Sequence Number")
-    ax1.set_ylabel("Alternate Amino Acid")
-    ax1.set_title("Pathogenicity Heatmap")
+    ax1.set_ylim(max(yticks)+0.5, min(yticks)-0.5)
+    ax1.set_xlabel("Residue Sequence Number", fontsize=20)
+    ax1.set_ylabel("Alternate Amino Acid", fontsize=20)
+    ax1.set_title("Pathogenicity Heatmap", fontsize=24)
 
     # Add colorbar
     fig1.colorbar(heatmap, ax=ax1, shrink=0.6, label="AM Pathogenicity")
+
 
     # Save heatmap
     heatmap_path = out_dir / f"{uniprot_id}_heatmap.png"
@@ -63,8 +67,6 @@ def plot_predictions_line_graph(
     uniprot_id: str,
     predictions: pd.DataFrame,
     out_dir: Path,
-    helices: np.ndarray,
-    sheets: np.ndarray,
     alphafold_confidences: Optional[np.ndarray] = None,
 ):
     logging.info("Generating predictions line graph...")
@@ -80,20 +82,24 @@ def plot_predictions_line_graph(
 
     # Average pathogenicity
     ax1.plot(positional_means, label="Mean Pathogenicity", color="green")
-    ax1.set_ylim(0, 1.1)
-    ax1.set_xlabel("Residue Sequence Number")
-    ax1.set_ylabel("Mean Pathogenicity")
+    ax1.set_ylim(0, 1.01)
     ax1.margins(x=0, tight=True)
+    ax1.set_xlabel("Residue Sequence Number", fontsize=20)
+    ax1.set_ylabel("Mean Pathogenicity", fontsize=20)
 
     # Confidence
     if alphafold_confidences is not None:
         ax2 = ax1.twinx()
         ax2.plot(alphafold_confidences, label="AlphaFold Confidence", color="mediumvioletred")
-        ax2.set_ylim(0, 1.1)
+        ax2.set_ylim(0, 1.01)
         ax2.set_ylabel("AlphaFold Confidence")
         ax2.margins(x=0, tight=True)
 
     # Secondary structures
+    unique_structures = predictions.groupby('protein_variant_pos')['secondary_structure'].first().reset_index()
+    unique_structures = unique_structures.sort_values('protein_variant_pos')
+    helices = (unique_structures['secondary_structure'] == 'helix').astype(int).tolist()
+    sheets = (unique_structures['secondary_structure'] == 'sheet').astype(int).tolist()
     secondary_structures_x = np.arange(len(helices))
 
     ax1.bar(
@@ -119,10 +125,10 @@ def plot_predictions_line_graph(
     lines, labels = ax1.get_legend_handles_labels()
     if alphafold_confidences is not None:
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines + lines2, labels + labels2, loc="upper left")
+        ax1.legend(lines + lines2, labels + labels2, bbox_to_anchor=(0.5, -0.09), ncol=4, fontsize=20)
     else:
-        ax1.legend(lines, labels, loc="upper left")
-    ax1.set_title("Mean Pathogenicity, AlphaFold Confidence, and Secondary Structures")
+        ax1.legend(lines, labels, bbox_to_anchor=(0.5, -0.09), ncol=4, fontsize=20)
+    ax1.set_title("Mean Pathogenicity, AlphaFold Confidence, and Secondary Structures", fontsize=24)
 
     # Save line graph image
     line_graph_path = out_dir / f"{uniprot_id}_line_graph.png"
@@ -162,11 +168,41 @@ def plot_clinvar_scatter(
         s=config['defaults']['scatter_marker_size'],  # Use configurable marker size
     )
 
+    # Secondary structures
+    unique_structures = missense_data.groupby('protein_variant_pos')['secondary_structure'].first().reset_index()
+    unique_structures = unique_structures.sort_values('protein_variant_pos')
+    helices = (unique_structures['secondary_structure'] == 'helix').astype(int).tolist()
+    sheets = (unique_structures['secondary_structure'] == 'sheet').astype(int).tolist()
+    secondary_structures_x = np.arange(len(helices))
+
+    plt.bar(
+        secondary_structures_x,
+        helices,
+        label="Alpha helix",
+        color="orange",
+        alpha=0.25,
+        width=1,
+        align="center",
+    )
+
+    plt.bar(
+        secondary_structures_x,
+        sheets,
+        label="Beta sheet",
+        color="purple",
+        alpha=0.25,
+        width=1,
+        align="center",
+    )
+
     # General plot settings
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0.0)
-    plt.title("AlphaMissense Predicted Pathogenicity with ClinVar Pathogenicity Classification")
-    plt.xlabel("Residue Sequence Number")
-    plt.ylabel("AlphaMissense Predicted Pathogenicity")
+    plt.legend(bbox_to_anchor=(0, -0.15), loc="upper left", ncol=3, fontsize = 15)
+    plt.title("AlphaMissense Predicted Pathogenicity with ClinVar Pathogenicity Classification", fontsize=24)
+    plt.xlabel("Residue Sequence Number", fontsize=20)
+    plt.ylabel("AlphaMissense Predicted Pathogenicity", fontsize=20)
+    plt.ylim((0, 1.01))
+    plt.xlim((0, len(positional_means)))
+
 
     clinvar_scatter_path = out_dir / f"{gene_id}_avgAM_clinvar.png"
     plt.savefig(clinvar_scatter_path, format="png", bbox_inches="tight")
@@ -174,7 +210,7 @@ def plot_clinvar_scatter(
     plt.close()
 
 
-def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missense_data: pd.DataFrame, out_dir: Path):
+def plot_clinvar_sankey(gene_id: str, clinvar_missense_data: pd.DataFrame, out_dir: Path):
     # Map classification to reduce number of labels
     clinvar_missense_data["clinvar_classification_mapped"] = clinvar_missense_data["ClinVar classification"].map(
         config['clinvar_classification_mapping']
@@ -234,18 +270,20 @@ def plot_clinvar_sankey(gene_id: str, predictions: pd.DataFrame, clinvar_missens
         ]
     )
 
-    # Update layout and save Sankey diagram as PNG
+    # Update layout
     sankey_fig.update_layout(
         title_text=f"{gene_id} ClinVar vs. AlphaMissense Classification",
-        font_size=15,
+        font_size=20,
         autosize=False,
-        width=config['defaults']['sankey_plot_width'],  # Configurable plot width
-        height=config['defaults']['sankey_plot_height'],  # Configurable plot height
+        width=config['defaults']['sankey_plot_width'] * 1.2,  # Increase overall width
+        height=config['defaults']['sankey_plot_height'],
+        margin=dict(t=50, b=100, l=100, r=20)  # Adjust margins
     )
-    sankey_path = out_dir / f"{gene_id}_sankey_diagram.png"
-    pio.write_image(sankey_fig, file=sankey_path, format="png")
-    logging.info(f"Sankey diagram stored at {sankey_path}")
 
+    # Save the combined figure as PNG
+    sankey_path = out_dir / f"{gene_id}_sankey_diagram_with_stats.png"
+    pio.write_image(sankey_fig, file=sankey_path, format="png", scale=2)  # Increase resolution
+    logging.info(f"Sankey diagram with stats stored at {sankey_path}")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate visualizations for AlphaMissense predictions.")
@@ -288,7 +326,7 @@ def main():
         if args.graph_type == "scatter":
             plot_clinvar_scatter(args.uniprot_id, predictions, clinvar_data, args.out_dir)
         else:
-            plot_clinvar_sankey(args.uniprot_id, predictions, clinvar_data, args.out_dir)
+            plot_clinvar_sankey(args.uniprot_id, clinvar_data, args.out_dir)
     else:
         logging.error(f"Unknown graph type: {args.graph_type}")
 

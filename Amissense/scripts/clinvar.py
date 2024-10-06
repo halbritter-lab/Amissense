@@ -166,6 +166,15 @@ def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame)
     )
     merged_df = merged_df.drop(["protein_variant_from", "protein_variant_pos", "protein_variant_to"], axis=1)
 
+    # Concordance
+    CV_ambiguous_labels = ["Uncertain significance", "Conflicting classifications of pathogenicity"]
+    for index, row in merged_df.iterrows():
+        print(row)
+        if row['germline_classification'] in CV_ambiguous_labels:
+            merged_df.at[index, 'concordance'] = (row['classification'] == "ambiguous")
+        else:
+            merged_df.at[index, 'concordance'] = (row['classification'].lower() in row['germline_classification'].lower())
+
     # Rename columns
     merged_df = merged_df.rename(
         columns={
@@ -182,6 +191,28 @@ def merge_missense_data(clinvar_data: pd.DataFrame, missense_data: pd.DataFrame)
     )
 
     return merged_df
+
+
+def log_statistics(clinvar_missense_data: pd.DataFrame):
+    # Average pathogenicity per secondary structure
+    grouped_ss_average_pathogenicity = clinvar_missense_data.groupby('secondary_structure')['AM pathogenicity score'].mean()
+    logging.info(f"Average AM pathogenicity at alpha helices, beta sheets and undefined regions: {grouped_ss_average_pathogenicity}")
+
+    # Average pathogenicity per amino acid
+    grouped_aa_average_pathogenicity = clinvar_missense_data.groupby("Amino acid change - from")['AM pathogenicity score'].agg(
+        ['mean', 'count'])
+    grouped_aa_average_pathogenicity = grouped_aa_average_pathogenicity.sort_values(by='mean', ascending=False)
+    for amino_acid, row in grouped_aa_average_pathogenicity.iterrows():
+        logging.info(
+            f"Amino acid change from {amino_acid}: Average AM pathogenicity = {row['mean']:.4f}, Count = {row['count']}")
+
+    # Concordance
+    concordant_count = clinvar_missense_data['concordance'].sum()
+    total_count = len(clinvar_missense_data)
+    concordant_percentage = (concordant_count / total_count) * 100
+    logging.info(f"Total concordant classifications: {concordant_count} out of {total_count}")
+    logging.info(f"Concordant percentage: {concordant_percentage:.2f}%")
+
 
 if __name__ == "__main__":
     import argparse
